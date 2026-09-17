@@ -105,6 +105,7 @@ function pullAll() {
       carSheet: openCar().getName(),
       expensesSheet: openExpenses().getName(),
       expensesTab: expensesTab().getName(),
+      tabs: expenseTabs().map(function (t) { return { name: t.sheet.getName(), currency: t.currency }; }),
       pulledAt: new Date().toISOString()
     }
   };
@@ -208,51 +209,75 @@ function readService() {
   return out;
 }
 
-/** The monthly expense tab to read/write. */
+/** Every tab that looks like an expense log: header row, amount column, currency. */
+function expenseTabs() {
+  var out = [];
+  openExpenses().getSheets().forEach(function (sh) {
+    if (sh.getName() === CONFIG.BRAIN_TAB) return;
+    var grid = gridOf(sh);
+    var hr = -1;
+    ['Expense Name', 'Expense', 'Expenses'].forEach(function (h) {
+      if (hr < 0) hr = findHeaderRow(grid, [h]);
+    });
+    if (hr < 0) return;
+    var nameCol = -1;
+    ['Expense Name', 'Expense', 'Expenses'].forEach(function (h) {
+      if (nameCol < 0) nameCol = colIndex(grid, hr, h);
+    });
+    var amtCol = -1, currency = '';
+    [['Amount in AED', 'AED'], ['Amount in EGP', 'EGP'], ['Amount', '']].forEach(function (pair) {
+      if (amtCol < 0) {
+        var c = colIndex(grid, hr, pair[0]);
+        if (c >= 0) { amtCol = c; currency = pair[1]; }
+      }
+    });
+    if (nameCol < 0 || amtCol < 0) return;
+    out.push({ sheet: sh, grid: grid, hr: hr, nameCol: nameCol, amtCol: amtCol, currency: currency || 'AED' });
+  });
+  return out;
+}
+
+/** The tab new expenses are appended to. */
 function expensesTab() {
   var ss = openExpenses();
   if (CONFIG.EXPENSES_TAB) {
     var named = ss.getSheetByName(CONFIG.EXPENSES_TAB);
     if (named) return named;
   }
-  // otherwise: the left-most tab that has an "Expense Name" header
-  var sheets = ss.getSheets();
-  for (var i = 0; i < sheets.length; i++) {
-    if (sheets[i].getName() === CONFIG.BRAIN_TAB) continue;
-    var grid = gridOf(sheets[i]);
-    if (findHeaderRow(grid, ['Expense Name', 'Amount in AED']) >= 0) return sheets[i];
+  var tabs = expenseTabs();
+  for (var i = 0; i < tabs.length; i++) {
+    if (tabs[i].currency === 'AED') return tabs[i].sheet;
   }
-  return sheets[0];
+  return tabs.length ? tabs[0].sheet : ss.getSheets()[0];
 }
 
-/** Expense rows: Expense Name | Amount in AED | Category | Payment Method | Date */
+/** Expense rows from every month tab, each tagged with its tab and currency. */
 function readExpenses() {
-  var sh = expensesTab();
-  var grid = gridOf(sh);
-  var hr = findHeaderRow(grid, ['Expense Name', 'Amount in AED']);
-  if (hr < 0) return [];
-  var cName = colIndex(grid, hr, 'Expense Name');
-  var cAmt = colIndex(grid, hr, 'Amount in AED');
-  var cCat = colIndex(grid, hr, 'Category');
-  var cPay = colIndex(grid, hr, 'Payment Method');
-  var cDate = colIndex(grid, hr, 'Date');
   var out = [];
-  for (var r = hr + 1; r < grid.length; r++) {
-    var name = String(grid[r][cName] || '').trim();
-    var amt = grid[r][cAmt];
-    if (!name) continue;                 // totals row has an amount but no name
-    out.push({
-      id: 'exp-' + sh.getName() + '-' + (r + 1),
-      row: r + 1,
-      tab: sh.getName(),
-      name: name,
-      amount: asNumber(amt),
-      category: cCat >= 0 ? String(grid[r][cCat] || '').trim() : '',
-      method: cPay >= 0 ? String(grid[r][cPay] || '').trim() : '',
-      date: cDate >= 0 ? asISO(grid[r][cDate]) : '',
-      source: 'sheet'
-    });
-  }
+  expenseTabs().forEach(function (t) {
+    var grid = t.grid, hr = t.hr;
+    var cCat = colIndex(grid, hr, 'Category');
+    var cPay = colIndex(grid, hr, 'Payment Method');
+    var cDate = colIndex(grid, hr, 'Date');
+    var tabName = t.sheet.getName();
+    for (var r = hr + 1; r < grid.length; r++) {
+      var name = String(grid[r][t.nameCol] || '').trim();
+      if (!name) continue;                       // totals rows carry an amount but no name
+      if (name.toLowerCase() === 'expense name') continue;
+      out.push({
+        id: 'exp-' + tabName + '-' + (r + 1),
+        row: r + 1,
+        tab: tabName,
+        currency: t.currency,
+        name: name,
+        amount: asNumber(grid[r][t.amtCol]),
+        category: cCat >= 0 ? String(grid[r][cCat] || '').trim() : '',
+        method: cPay >= 0 ? String(grid[r][cPay] || '').trim() : '',
+        date: cDate >= 0 ? asISO(grid[r][cDate]) : '',
+        source: 'sheet'
+      });
+    }
+  });
   return out;
 }
 

@@ -409,7 +409,9 @@ const sum = (arr, f) => arr.reduce((s, x) => s + num(f(x)), 0);
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const wordCount = s => (String(s || '').trim().match(/\S+/g) || []).length;
 function money(n, dec = 0, sign = false) {
-  const c = (DB && DB.settings.currency) || '$';
+  let c;
+  try { c = (typeof usingSheets === 'function' && usingSheets()) ? ((UI.finCurrency || 'AED') + ' ') : ((DB && DB.settings.currency) || '$'); }
+  catch (e) { c = '$'; }
   const v = Math.abs(n);
   const s = v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
   return (n < 0 ? '−' : (sign && n > 0 ? '+' : '')) + c + s;
@@ -858,10 +860,22 @@ function removeItem(type, id) {
    ========================================================= */
 function monthTotals(m) {
   let income = 0, expense = 0;
-  DB.transactions.forEach(x => { if (!x.date || x.date.slice(0, 7) !== m) return; x.type === 'Income' ? income += num(x.amount) : expense += num(x.amount); });
+  const rows = typeof expenseUniverse === 'function' ? expenseUniverse() : (DB.transactions || []);
+  const cur = typeof baseCur === 'function' ? baseCur() : null;
+  const sheets = typeof usingSheets === 'function' && usingSheets();
+  rows.forEach(x => {
+    if (!x.date || x.date.slice(0, 7) !== m) return;
+    if (sheets && x.currency !== cur) return;
+    x.type === 'Income' ? income += num(x.amount) : expense += num(x.amount);
+  });
   return { income, expense, net: income - expense, rate: income ? (income - expense) / income : 0 };
 }
-const spentFor = (cat, m) => sum(DB.transactions.filter(x => x.type === 'Expense' && x.category === cat && x.date.slice(0, 7) === m), x => x.amount);
+function spentFor(cat, m) {
+  const rows = typeof expenseUniverse === 'function' ? expenseUniverse() : (DB.transactions || []);
+  const cur = typeof baseCur === 'function' ? baseCur() : null;
+  const sheets = typeof usingSheets === 'function' && usingSheets();
+  return sum(rows.filter(x => x.type === 'Expense' && x.category === cat && String(x.date || '').slice(0, 7) === m && (!sheets || x.currency === cur)), x => x.amount);
+}
 const coursePct = c => num(c.lessonsTotal) ? Math.min(100, Math.round(num(c.lessonsDone) / num(c.lessonsTotal) * 100)) : 0;
 const goalPct = g => num(g.target) ? Math.min(100, num(g.saved) / num(g.target) * 100) : 0;
 function goalMonthly(g) {
@@ -1545,6 +1559,79 @@ function fuelStats() {
 }
 
 /* =========================================================
+   UNIFIED EXPENSES
+   When Google Sheets is connected the sheet is the source of truth, so a row
+   added in the app and a row typed into the sheet are the same thing.
+   Falls back to the app's own transactions when Sheets is not connected.
+   ========================================================= */
+const usingSheets = () => Sheets.connected() && (Sheets.data.expenses || []).length > 0;
+/** Currency the finance figures are shown in (the sheets hold AED and EGP). */
+const baseCur = () => usingSheets() ? (UI.finCurrency || 'AED') : (DB.settings.currency || '$');
+
+function expenseUniverse() {
+  if (usingSheets()) {
+    return (Sheets.data.expenses || []).map(r => ({
+      id: r.id, row: r.row, tab: r.tab, pending: r.pending,
+      date: r.date, description: r.name, amount: num(r.amount),
+      category: r.category || 'Uncategorised', account: r.method || '',
+      currency: r.currency || 'AED', type: 'Expense', source: 'sheet'
+    }));
+  }
+  return (DB.transactions || []).map(x => ({
+    id: x.id, date: x.date, description: x.description, amount: num(x.amount),
+    category: x.category, account: x.account, currency: DB.settings.currency || '$',
+    type: x.type, source: 'local'
+  }));
+}
+
+/** All currencies present, so the picker only offers what actually exists. */
+const currenciesAvailable = () => [...new Set(expenseUniverse().map(x => x.currency))].filter(Boolean).sort();
+
+const endOfMonth = m => {
+  const [y, mo] = m.split('-').map(Number);
+  return `${m}-${pad(new Date(y, mo, 0).getDate())}`;
+};
+
+/** [from, to] for the active date filter. */
+function rangeBounds() {
+  const m = UI.finMonth;
+  switch (UI.finRange || 'month') {
+    case 'prev': { const p = shiftMonth(m, -1); return [p + '-01', endOfMonth(p)]; }
+    case '3m': return [shiftMonth(m, -2) + '-01', endOfMonth(m)];
+    case '6m': return [shiftMonth(m, -5) + '-01', endOfMonth(m)];
+    case 'year': return [m.slice(0, 4) + '-01-01', m.slice(0, 4) + '-12-31'];
+    case 'all': return ['0000-01-01', '9999-12-31'];
+    case 'custom': return [UI.finFrom || '0000-01-01', UI.finTo || '9999-12-31'];
+    default: return [m + '-01', endOfMonth(m)];
+  }
+}
+const rangeLabel = () => ({
+  month: monthLabel(UI.finMonth, true),
+  prev: monthLabel(shiftMonth(UI.finMonth, -1), true),
+  '3m': `${monthLabel(shiftMonth(UI.finMonth, -2))} – ${monthLabel(UI.finMonth, true)}`,
+  '6m': `${monthLabel(shiftMonth(UI.finMonth, -5))} – ${monthLabel(UI.finMonth, true)}`,
+  year: UI.finMonth.slice(0, 4),
+  all: 'All time',
+  custom: `${UI.finFrom ? fmtDate(UI.finFrom) : 'start'} – ${UI.finTo ? fmtDate(UI.finTo) : 'now'}`
+}[UI.finRange || 'month']);
+
+/** Expenses inside the active date range and currency. */
+function filteredExpenses() {
+  const [from, to] = rangeBounds();
+  const cur = baseCur();
+  return expenseUniverse()
+    .filter(x => x.date && x.date >= from && x.date <= to)
+    .filter(x => !usingSheets() || x.currency === cur)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+/** Months that actually contain data, newest first — drives the month picker. */
+function monthsWithData() {
+  const set = new Set(expenseUniverse().filter(x => x.date).map(x => x.date.slice(0, 7)));
+  return [...set].sort().reverse();
+}
+
+/* =========================================================
    FORMS FOR SHEET-BACKED ROWS
    These records live in Google Sheets rather than in localStorage, so they
    use their own add/edit sheet instead of the generic openForm().
@@ -1660,6 +1747,7 @@ const TITLES = { home: 'Dashboard', tasks: 'Tasks', money: 'Finances', notes: 'N
 const UI = {
   view: 'home', prev: 'home',
   taskFilter: 'today', moneyTab: 'activity', finMonth: today().slice(0, 7),
+  finRange: 'month', finFrom: '', finTo: '', finCurrency: 'AED',
   noteCat: 'All', noteQuery: '', projFilter: 'All', courseFilter: 'All', carTab: 'fuel',
   journalSel: null, captureType: 'task'
 };
@@ -1827,12 +1915,17 @@ SCREENS.money = () => {
     <button class="icon-btn" data-act="month" data-val="1" aria-label="Next month">${icon('chevR', 20)}</button>
   </div></div>
   <div class="stat-grid">
+    ${usingSheets() ? `
+    ${statTile('arrowUp', 'Spent', money(fin.expense), monthLabel(m, true))}
+    ${statTile('layers', 'Entries', expenseUniverse().filter(x => String(x.date || '').slice(0, 7) === m && x.currency === baseCur()).length, 'from your sheet')}
+    ` : `
     ${statTile('arrowDown', 'Income', money(fin.income), entryCount(DB.transactions.filter(x => x.date.slice(0, 7) === m).length))}
     ${statTile('arrowUp', 'Expenses', money(fin.expense), 'this month')}
     ${statTile('wallet', 'Net', money(fin.net, 0, true), fin.net < 0 ? 'spending over income' : 'kept this month', fin.net < 0 ? 'txt-red' : '')}
     ${statTile('target', 'Savings rate', fin.income ? Math.round(fin.rate * 100) + '%' : '—', 'of income')}
+    `}
   </div>
-  ${seg('moneyTab', [['activity', 'Activity'], ['budgets', 'Budgets'], ['goals', 'Goals'], ['sheet', 'Sheet']])}`;
+  ${seg('moneyTab', [['activity', 'Activity'], ['budgets', 'Budgets'], ['goals', 'Goals']])}`;
 
   if (UI.moneyTab === 'sheet') {
     if (!Sheets.connected()) return head + sheetOffCard('your expense rows');
@@ -1880,19 +1973,33 @@ SCREENS.money = () => {
       </div>`;
     }).join('') : `<div class="card">${emptyState('target', 'No goals yet', 'Save toward something that matters.', addBtn('goals', 'Create a goal'))}</div>`);
   }
-  const list = DB.transactions.filter(x => x.date.slice(0, 7) === m).sort((a, b) => b.date.localeCompare(a.date) || num(b.ts) - num(a.ts));
-  const cats = {}; list.filter(x => x.type === 'Expense').forEach(x => { cats[x.category] = (cats[x.category] || 0) + num(x.amount); });
+  const sheets = usingSheets();
+  const list = filteredExpenses();
+  const cats = {};
+  list.filter(x => x.type === 'Expense').forEach(x => { cats[x.category] = (cats[x.category] || 0) + num(x.amount); });
   const top = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const months = monthsWithData();
+  const curs = currenciesAvailable();
   return head + `
+  ${seg('finRange', [['month', 'Month'], ['prev', 'Last'], ['3m', '3 mo'], ['6m', '6 mo'], ['year', 'Year'], ['all', 'All']])}
+  <div class="card" style="padding:10px">
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      ${months.length ? `<select class="select" data-bind="finMonth" style="flex:1;min-width:150px">${months.map(mm => `<option value="${mm}"${UI.finMonth === mm ? ' selected' : ''}>${monthLabel(mm, true)}</option>`).join('')}</select>` : ''}
+      ${curs.length > 1 ? `<select class="select" data-bind="finCurrency" style="width:110px">${curs.map(c => `<option${UI.finCurrency === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}
+    </div>
+    <p class="hint" style="margin-top:8px">${esc(rangeLabel())} · ${plural(list.length, 'row')}${sheets ? ' · live from your sheet' : ''}</p>
+  </div>
   <div class="card">${cardHead('trend', 'Last 6 months', chartLegend())}${miniChart(m)}</div>
   ${top.length ? `<div class="card">${cardHead('pie', 'Top spending')}${top.map(([c, v]) => `<div style="margin-bottom:11px"><div class="row" style="justify-content:space-between;font-size:13.5px;margin-bottom:6px"><span>${esc(c)}</span><span class="mono hint">${money(v)}</span></div><div class="bar"><i style="width:${v / top[0][1] * 100}%"></i></div></div>`).join('')}</div>` : ''}
-  <div class="card">${cardHead('layers', monthLabel(m, true), `<span class="hint">${entryCount(list.length)}</span>`)}
-    <div class="list">${list.length ? list.map(x => `<div class="item" data-act="edit" data-type="transactions" data-id="${x.id}">
+  <div class="card">${cardHead('layers', esc(rangeLabel()), `<span class="hint">${entryCount(list.length)}</span>`)}
+    <div class="list">${list.length ? list.map(x => `<div class="item" data-act="${x.source === 'sheet' ? 'sheetEdit' : 'edit'}" data-kind="expense" data-type="transactions" data-id="${esc(x.id)}">
       <span class="tx-ico ${x.type}">${icon(x.type === 'Income' ? 'arrowDown' : 'arrowUp', 16)}</span>
-      <div class="grow"><div class="t">${esc(x.description)}</div><div class="s">${esc(x.category)} · ${fmtDate(x.date)}${x.account ? ' · ' + esc(x.account) : ''}</div></div>
+      <div class="grow"><div class="t">${esc(x.description)}${x.pending ? ' <span class="chip amber">saving</span>' : ''}</div>
+        <div class="s">${esc(x.category || '')}${x.date ? ' · ' + fmtDate(x.date) : ''}${x.account ? ' · ' + esc(x.account) : ''}</div></div>
       <span class="amt ${x.type}">${x.type === 'Income' ? '+' : '−'}${money(num(x.amount), 2)}</span></div>`).join('')
-      : emptyState('wallet', 'No transactions', `Nothing recorded for ${monthLabel(m, true)}.`, addBtn('transactions', 'Add transaction'))}</div>
-  </div>`;
+      : emptyState('wallet', 'Nothing in this range', 'Try another month or range.')}</div>
+  </div>
+  <div class="btn-row"><button class="btn btn-primary" data-act="${sheets ? 'sheetAdd' : 'add'}" data-kind="expense" data-type="transactions">${icon('plus', 16)} Add ${sheets ? 'to sheet' : 'transaction'}</button></div>`;
 };
 
 SCREENS.notes = () => {
