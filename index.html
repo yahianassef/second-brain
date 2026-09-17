@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#07090D">
+<title>Second Brain</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100vh;display:grid;place-items:center;padding:24px;background:
+      radial-gradient(800px 420px at 50% -10%,rgba(0,102,255,.16),transparent 65%),#07090D;
+    color:#E8ECF3;font-family:"Inter","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;text-align:center}
+  .mark{width:64px;height:64px;border-radius:20px;margin:0 auto 20px;display:grid;place-items:center;
+    background:linear-gradient(135deg,#0057E6,#00A8FF);box-shadow:0 14px 40px -12px rgba(0,140,255,.7)}
+  h1{font-size:28px;letter-spacing:-.035em;margin-bottom:8px}
+  p{color:#A3ADBF;font-size:14.5px;max-width:420px;margin:0 auto 28px;line-height:1.6}
+  .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  a{display:inline-flex;align-items:center;gap:9px;padding:13px 22px;border-radius:13px;font-weight:600;
+    font-size:14.5px;text-decoration:none;transition:transform .12s,box-shadow .2s}
+  a:active{transform:scale(.97)}
+  .primary{background:linear-gradient(180deg,#1A7BFF,#0066FF);color:#fff;box-shadow:0 8px 22px -10px rgba(0,102,255,.9)}
+  .ghost{background:#151A24;border:1px solid #2A3345;color:#A3ADBF}
+  .hint{margin-top:26px;font-size:12.5px;color:#6B7589}
+</style>
+</head>
+<body>
+  <main>
+    <div class="mark">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+        <circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="13" r="2.4"/>
+        <circle cx="6.5" cy="19" r="2"/><circle cx="18" cy="18.5" r="2"/>
+        <path d="M7.8 8.4 10.3 11.4M16.4 7.6l-2.8 3.6M10.5 14.9l-2.5 2.6M13.9 14.6l2.7 2.3"/>
+      </svg>
+    </div>
+    <h1>Second Brain</h1>
+    <p>Projects, tasks, finances, journal, courses, notes and car maintenance — synced across every device.</p>
+    <div class="row">
+      <a class="primary" id="go" href="app.html">Open the app</a>
+      <a class="ghost" href="m.html">Phone version</a>
+      <a class="ghost" href="app.html">Desktop version</a>
+    </div>
+    <p class="hint">Taking you to the right version automatically…</p>
+  </main>
+<script>
+  // Send phones to the touch-first build, everything else to the full desktop app.
+  // ?stay=1 keeps this launcher on screen.
+  var phone = window.matchMedia('(max-width: 760px)').matches || /Mobi|Android|iPhone/.test(navigator.userAgent);
+  var target = phone ? 'm.html' : 'app.html';
+  document.getElementById('go').setAttribute('href', target);
+  if (!/[?&]stay=1/.test(location.search)) {
+    location.replace(target + location.hash);
+  }
+</script>
+</body>
+</html>

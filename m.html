@@ -1,0 +1,2408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#07090D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Second Brain">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Second Brain</title>
+<style>
+/* =========================================================
+   1. TOKENS — same palette as the desktop app, tuned for phones
+   ========================================================= */
+:root{
+  color-scheme: dark;
+  --bg:#07090D; --surface:#10141C; --surface-2:#151A24; --surface-3:#1B2130;
+  --border:#1E2532; --border-2:#2A3345;
+  --text:#E8ECF3; --text-2:#A3ADBF; --text-3:#6B7589;
+  --blue:#0066FF; --blue-2:#00A8FF; --blue-soft:rgba(0,120,255,.14);
+  --green:#22C55E; --amber:#F5A524; --red:#F43F5E; --violet:#8B5CF6; --slate:#7C8AA5;
+  --radius:16px;
+  --font:"Inter","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Consolas,monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --nav-h:62px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0}
+a{color:var(--blue-2);text-decoration:none}
+svg{flex-shrink:0}
+[hidden]{display:none!important}
+.mono{font-family:var(--mono)}
+.muted{color:var(--text-3)}
+.hint{font-size:12.5px;color:var(--text-3)}
+.eyebrow{font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--blue-2);font-weight:700}
+.txt-red{color:#FF7A92!important}.txt-amber{color:#FBBF4E!important}.txt-green{color:#4ADE80!important}.txt-blue{color:var(--blue-2)!important}
+.spacer{flex:1}
+.row{display:flex;align-items:center;gap:10px}
+
+/* =========================================================
+   2. APP FRAME — top bar, scrolling screen, bottom nav, FAB
+   ========================================================= */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:40;padding:calc(var(--safe-t) + 10px) 14px 10px;
+  display:flex;align-items:center;gap:10px;background:rgba(7,9,13,.82);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
+.topbar h1{font-size:21px;font-weight:700;letter-spacing:-.03em;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.back-btn{width:38px;height:38px;display:none;place-items:center;border-radius:12px;background:var(--surface-2);color:var(--text-2)}
+body.sub .back-btn{display:grid}
+.top-act{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);transition:transform .12s}
+.top-act:active{transform:scale(.92)}
+.top-act[data-state="idle"]{color:var(--green)}
+.top-act[data-state="syncing"]{color:var(--blue-2)}
+.top-act[data-state="syncing"] svg{animation:spin 1.4s linear infinite}
+.top-act[data-state="error"]{color:#FF7A92}
+.screen{padding:calc(var(--safe-t) + 70px) 14px calc(var(--nav-h) + var(--safe-b) + 92px);
+  background:radial-gradient(700px 360px at 50% -10%,rgba(0,102,255,.13),transparent 65%);min-height:100vh}
+.screen > *{animation:rise .32s var(--ease) both}
+.screen > *:nth-child(2){animation-delay:.03s}
+.screen > *:nth-child(3){animation-delay:.06s}
+.screen > *:nth-child(n+4){animation-delay:.09s}
+
+.navbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;grid-template-columns:repeat(5,1fr);
+  padding-bottom:var(--safe-b);background:rgba(10,13,19,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--border)}
+.navbar button{height:var(--nav-h);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  color:var(--text-3);font-size:10.5px;font-weight:600;position:relative;transition:color .18s}
+.navbar button.on{color:var(--blue-2)}
+.navbar button.on::before{content:'';position:absolute;top:0;width:26px;height:3px;border-radius:0 0 4px 4px;background:var(--blue-2);box-shadow:0 0 12px var(--blue-2)}
+.navbar button:active{transform:scale(.94)}
+.navbar .badge{position:absolute;top:8px;right:calc(50% - 20px);min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--blue);color:#fff;font-size:9.5px;line-height:16px;font-weight:700}
+.fab{position:fixed;right:16px;bottom:calc(var(--nav-h) + var(--safe-b) + 16px);z-index:45;width:56px;height:56px;border-radius:19px;
+  display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,#2C88FF,#0057E6);
+  box-shadow:0 14px 30px -10px rgba(0,102,255,.85),inset 0 1px 0 rgba(255,255,255,.3);transition:transform .14s var(--ease)}
+.fab:active{transform:scale(.9)}
+
+/* =========================================================
+   3. BUILDING BLOCKS
+   ========================================================= */
+.card{background:linear-gradient(180deg,var(--surface),#0D1118);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;position:relative}
+.card.tap{transition:transform .12s var(--ease),border-color .2s}
+.card.tap:active{transform:scale(.985);border-color:rgba(0,168,255,.4)}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.card-title{font-size:12.5px;font-weight:700;color:var(--text-2);display:flex;align-items:center;gap:8px;letter-spacing:.02em;text-transform:uppercase}
+.card-title svg{color:var(--blue-2)}
+.link-btn{font-size:13px;color:var(--blue-2);font-weight:600;display:inline-flex;align-items:center;gap:4px;padding:6px 2px}
+.section-title{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);font-weight:700;margin:20px 4px 10px;display:flex;align-items:center;gap:8px}
+.section-title .n{font-family:var(--mono);background:var(--surface-2);border-radius:10px;padding:1px 7px;letter-spacing:0}
+.section-title.late{color:#FF7A92}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:13px;font-weight:600;font-size:14.5px;
+  border:1px solid transparent;transition:transform .12s,background .2s;min-height:44px}
+.btn:active{transform:scale(.96)}
+.btn.sm{padding:8px 12px;font-size:13px;min-height:38px;border-radius:11px}
+.btn-primary{background:linear-gradient(180deg,#1A7BFF,#0066FF);color:#fff;box-shadow:0 8px 20px -10px rgba(0,102,255,.9),inset 0 1px 0 rgba(255,255,255,.22)}
+.btn-ghost{background:var(--surface-2);border-color:var(--border);color:var(--text-2)}
+.btn-ghost.on{border-color:rgba(0,168,255,.5);color:var(--blue-2);background:rgba(0,102,255,.12)}
+.btn-danger{background:rgba(244,63,94,.12);color:#FF7A92;border-color:rgba(244,63,94,.28)}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn-row .btn{flex:1;min-width:130px}
+.icon-btn{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;color:var(--text-3);transition:transform .12s}
+.icon-btn:active{transform:scale(.9);background:var(--surface-3)}
+.icon-btn.danger{color:#FF7A92}
+.icon-btn.on{color:var(--blue-2)}
+
+.seg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0 8px;margin:0 -14px;padding-left:14px;padding-right:14px}
+.seg::-webkit-scrollbar{display:none}
+.seg button{flex:0 0 auto;padding:9px 15px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border);
+  color:var(--text-3);font-size:13.5px;font-weight:600;transition:all .18s;min-height:40px}
+.seg button.on{background:rgba(0,102,255,.16);border-color:rgba(0,168,255,.45);color:#fff}
+.seg button .n{font-family:var(--mono);font-size:11px;opacity:.75;margin-left:5px}
+
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:20px;
+  background:var(--surface-3);color:var(--text-2);border:1px solid var(--border-2);white-space:nowrap}
+.chip .dot{background:currentColor}
+.chip.blue{background:rgba(0,120,255,.14);color:#5CB3FF;border-color:rgba(0,120,255,.3)}
+.chip.green{background:rgba(34,197,94,.12);color:#4ADE80;border-color:rgba(34,197,94,.26)}
+.chip.amber{background:rgba(245,165,36,.12);color:#FBBF4E;border-color:rgba(245,165,36,.26)}
+.chip.red{background:rgba(244,63,94,.12);color:#FF7A92;border-color:rgba(244,63,94,.26)}
+.chip.violet{background:rgba(139,92,246,.14);color:#B69CFF;border-color:rgba(139,92,246,.3)}
+.chip.slate{background:rgba(124,138,165,.12);color:#A3ADBF;border-color:rgba(124,138,165,.24)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.tag{font-size:11.5px;color:var(--text-3);font-weight:600}
+.tag::before{content:'#';color:var(--blue-2);opacity:.75}
+
+.bar{height:7px;background:var(--surface-3);border-radius:10px;overflow:hidden}
+.bar > i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#0066FF,#00A8FF);max-width:100%;
+  box-shadow:0 0 10px rgba(0,168,255,.45);animation:fill .8s var(--ease) both}
+.bar.green > i{background:linear-gradient(90deg,#16A34A,#4ADE80)}
+.bar.amber > i{background:linear-gradient(90deg,#D97706,#FBBF4E)}
+.bar.red > i{background:linear-gradient(90deg,#E11D48,#FF7A92)}
+
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.stat{background:linear-gradient(180deg,var(--surface),#0D1118);border:1px solid var(--border);border-radius:var(--radius);padding:14px;overflow:hidden;position:relative}
+.stat .label{font-size:11.5px;color:var(--text-3);font-weight:600;display:flex;align-items:center;gap:7px}
+.stat .label svg{color:var(--blue-2)}
+.stat .value{font-size:25px;font-weight:700;letter-spacing:-.04em;margin:8px 0 2px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .sub{font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.list > * + *{border-top:1px solid var(--border)}
+.item{display:flex;align-items:center;gap:12px;padding:13px 2px;min-height:56px}
+.item .grow{flex:1;min-width:0}
+.item .t{font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .s{font-size:12.5px;color:var(--text-3);display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:3px}
+.item.done .t{color:var(--text-3);text-decoration:line-through}
+.check{width:26px;height:26px;border-radius:9px;border:2px solid #3A4458;display:grid;place-items:center;flex-shrink:0;color:transparent;transition:all .2s}
+.check.on{background:linear-gradient(135deg,#0066FF,#00A8FF);border-color:transparent;color:#fff;animation:pop .3s var(--ease)}
+.date-block{width:46px;height:48px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;line-height:1.1}
+.date-block b{font-size:17px;font-weight:700}
+.date-block span{font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3)}
+.date-block.late{border-color:rgba(244,63,94,.4);background:rgba(244,63,94,.08)}
+.date-block.late b{color:#FF7A92}
+.date-block.soon{border-color:rgba(0,168,255,.4);background:rgba(0,102,255,.1)}
+.date-block.soon b{color:var(--blue-2)}
+.when{font-size:12px;font-weight:700;color:var(--text-3);white-space:nowrap}
+.amt{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.Income{color:#4DC3FF}
+.tx-ico{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex-shrink:0}
+.tx-ico.Income{background:rgba(0,168,255,.15);color:var(--blue-2)}
+.tx-ico.Expense{background:rgba(124,138,165,.13);color:#A3ADBF}
+
+.empty{text-align:center;padding:34px 16px;color:var(--text-3)}
+.empty .e-ico{width:52px;height:52px;border-radius:16px;margin:0 auto 12px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue-2)}
+.empty h4{color:var(--text);font-size:15px;margin-bottom:4px;font-weight:700}
+.empty p{font-size:13px;margin-bottom:14px}
+.capture{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:4px 4px 4px 14px}
+.capture input{flex:1;background:none;border:0;outline:none;padding:12px 0;min-width:0;font-size:15px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.prose{font-size:15px;line-height:1.75;color:#C5CEDC}
+.prose p{margin:0 0 12px}
+.prose ul{margin:0 0 12px 18px}
+.prose li{margin-bottom:5px}
+.prose li::marker{color:var(--blue-2)}
+.prose h4{font-size:15px;color:var(--text);margin:14px 0 7px}
+.prose strong{color:#fff}
+.prose code{font-family:var(--mono);font-size:.87em;background:var(--surface-3);padding:1px 6px;border-radius:5px;color:#7CC8FF}
+.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.heatmap{display:grid;grid-template-rows:repeat(7,10px);grid-auto-flow:column;grid-auto-columns:10px;gap:3px;overflow-x:auto;padding-bottom:4px}
+.heatmap i{border-radius:3px;background:var(--surface-3);display:block}
+.heatmap i.future{background:transparent}
+.heatmap i.today{outline:1px solid var(--blue-2);outline-offset:1px}
+.ring .ring-bg{stroke:var(--surface-3);fill:none}
+.ring .ring-fg{stroke:url(#ringGrad);fill:none;stroke-linecap:round}
+.ring text{fill:var(--text);font-size:15px;font-weight:700;font-family:var(--font)}
+.chart{width:100%;height:auto;display:block}
+.chart .grid{stroke:#1A2130;stroke-dasharray:3 4}
+.chart .axis{fill:#6B7589;font-size:11px;font-family:var(--font)}
+.chart .axis.cur{fill:#E8ECF3;font-weight:700}
+.legend{display:flex;gap:12px;font-size:11.5px;color:var(--text-3)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.more-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.more-tile{background:linear-gradient(180deg,var(--surface),#0D1118);border:1px solid var(--border);border-radius:var(--radius);
+  padding:18px 16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start;min-height:104px;transition:transform .12s var(--ease)}
+.more-tile:active{transform:scale(.97)}
+.more-tile .ic{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue-2)}
+.more-tile b{font-size:15px}
+.more-tile span{font-size:12px;color:var(--text-3)}
+
+/* =========================================================
+   4. SHEETS (modals), FORMS, TOASTS — class names match the desktop app
+   ========================================================= */
+.overlay{position:fixed;inset:0;background:rgba(3,5,9,.7);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+  z-index:100;display:flex;align-items:flex-end;animation:fade .2s ease}
+.overlay.closing{animation:fadeOut .18s ease forwards}
+.overlay.closing .modal{animation:sheetOut .2s ease forwards}
+.modal{width:100%;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:linear-gradient(180deg,#141A26,#0E121A);
+  border:1px solid var(--border-2);border-bottom:0;border-radius:24px 24px 0 0;box-shadow:0 -20px 60px rgba(0,0,0,.7);
+  padding-bottom:var(--safe-b);animation:sheetIn .3s var(--ease)}
+.modal::before{content:'';display:block;width:42px;height:4px;border-radius:4px;background:var(--border-2);margin:10px auto 0}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 18px 4px}
+.modal-head h3{font-size:19px;font-weight:700;letter-spacing:-.02em}
+.modal-body{padding:14px 18px 18px}
+.modal-foot{display:flex;gap:10px;padding:12px 18px calc(16px + var(--safe-b));border-top:1px solid var(--border);
+  position:sticky;bottom:0;background:rgba(10,13,19,.95);backdrop-filter:blur(12px)}
+.modal-foot .btn{flex:1}
+.modal-foot{flex-wrap:wrap}
+.modal-foot .btn[data-del]{flex:0 0 100%;order:3;margin-right:0!important}
+.modal-foot .hint{display:none}
+.form-grid{display:grid;grid-template-columns:1fr;gap:14px}
+.field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.field > label{font-size:12.5px;font-weight:700;color:var(--text-2)}
+.field .req{color:var(--blue-2)}
+.input,.select{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:13px 14px;
+  outline:none;font-size:16px;transition:border-color .2s,box-shadow .2s;min-height:48px}
+.input:focus,.select:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(0,102,255,.18)}
+.input::placeholder{color:var(--text-3)}
+.select{appearance:none;-webkit-appearance:none;padding-right:38px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7589' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+.select option{background:#151A24}
+textarea.input{resize:vertical;min-height:120px;line-height:1.6}
+.field.invalid .input,.field.invalid .select{border-color:var(--red);box-shadow:0 0 0 4px rgba(244,63,94,.15)}
+.range-wrap{display:flex;align-items:center;gap:14px;height:48px}
+.range-wrap output{font-family:var(--mono);font-size:14px;width:46px;text-align:right;color:var(--blue-2)}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:8px;border-radius:8px;
+  background:linear-gradient(90deg,#0066FF,#00A8FF) 0/var(--p,0%) 100% no-repeat,var(--surface-3);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;border:4px solid #0A84FF;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.toggle{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--text-2);min-height:48px}
+.toggle input{position:absolute;opacity:0;pointer-events:none}
+.toggle span{width:46px;height:28px;border-radius:20px;background:var(--surface-3);border:1px solid var(--border-2);position:relative;transition:.2s;flex-shrink:0}
+.toggle span::after{content:'';position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#8792A8;transition:.2s var(--ease)}
+.toggle input:checked + span{background:#0066FF;border-color:#0066FF}
+.toggle input:checked + span::after{left:20px;background:#fff}
+.mood-pick{display:flex;gap:8px;flex-wrap:wrap}
+.mood-pick button{display:inline-flex;align-items:center;gap:7px;padding:11px 14px;border-radius:12px;border:1px solid var(--border);
+  background:var(--surface-2);color:var(--text-2);font-size:13.5px;min-height:44px}
+.mood-pick button.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 20%,transparent);color:#fff}
+.set-section{padding:16px 0 4px;border-top:1px solid var(--border);margin-top:16px}
+.set-section h4{font-size:14px;font-weight:700;margin-bottom:5px}
+.set-section p{font-size:13px;color:var(--text-3);margin-bottom:12px}
+.sync-state{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:13px 15px;font-size:14px;font-weight:600}
+.sync-dot{width:9px;height:9px;border-radius:50%;background:var(--text-3);flex-shrink:0}
+[data-state="idle"] .sync-dot{background:var(--green);box-shadow:0 0 10px rgba(34,197,94,.6)}
+[data-state="syncing"] .sync-dot{background:var(--blue-2);animation:pulse 1.2s infinite}
+[data-state="error"] .sync-dot{background:var(--red)}
+.modal code{font-family:var(--mono);font-size:.85em;background:var(--surface-3);padding:2px 6px;border-radius:5px;color:#7CC8FF;word-break:break-all}
+
+.toasts{position:fixed;left:12px;right:12px;bottom:calc(var(--nav-h) + var(--safe-b) + 14px);z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{pointer-events:auto;display:flex;align-items:center;gap:11px;background:#151B27;border:1px solid var(--border-2);
+  padding:13px 14px;border-radius:14px;box-shadow:0 14px 34px rgba(0,0,0,.6);font-size:14px;animation:riseIn .3s var(--ease)}
+.toast.out{animation:fadeOut .25s ease forwards}
+.toast .t-ico{width:26px;height:26px;border-radius:50%;background:rgba(0,168,255,.18);color:var(--blue-2);display:grid;place-items:center;flex-shrink:0}
+.toast.error .t-ico{background:rgba(244,63,94,.18);color:#FF7A92}
+.toast button{margin-left:auto;color:var(--blue-2);font-weight:700;padding:6px 10px;border-radius:8px}
+
+/* Full-screen search */
+.search-wrap{position:fixed;inset:0;z-index:90;background:var(--bg);display:none;flex-direction:column;padding-top:var(--safe-t)}
+.search-wrap.open{display:flex;animation:fade .2s ease}
+.search-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.search-head input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:12px 14px;outline:none;font-size:16px;min-height:48px}
+.search-results{flex:1;overflow-y:auto;padding:8px 14px calc(var(--safe-b) + 20px)}
+.sr-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-3);padding:14px 2px 6px;font-weight:700}
+.sr-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 10px;border-radius:13px;background:var(--surface);border:1px solid var(--border);margin-bottom:8px}
+.sr-item:active{background:var(--surface-3)}
+.sr-item .sr-ico{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--surface-3);color:var(--blue-2);flex-shrink:0}
+.sr-item > div{min-width:0}
+.sr-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-meta{font-size:12.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+mark{background:rgba(0,168,255,.3);color:#fff;border-radius:3px;padding:0 2px}
+
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes riseIn{from{opacity:0;transform:translateY(16px)}}
+@keyframes sheetIn{from{transform:translateY(100%)}}
+@keyframes sheetOut{to{transform:translateY(100%)}}
+@keyframes fade{from{opacity:0}}
+@keyframes fadeOut{to{opacity:0}}
+@keyframes fill{from{transform:scaleX(0);transform-origin:left}}
+@keyframes pop{0%{transform:scale(.8)}55%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(0,168,255,.7)}100%{box-shadow:0 0 0 9px rgba(0,168,255,0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+/* Tablets and desktop browsers: centre the phone layout instead of stretching it */
+@media (min-width:620px){
+  body{background:#05070A}
+  .topbar,.navbar,.toasts,.fab{max-width:560px;left:50%;transform:translateX(-50%);right:auto;width:100%}
+  .fab{transform:none;left:auto;right:max(16px,calc(50% - 264px))}
+  .fab:active{transform:scale(.9)}
+  .screen{max-width:560px;margin:0 auto;border-left:1px solid var(--border);border-right:1px solid var(--border)}
+  .overlay{align-items:center}
+  .modal{max-width:560px;margin:0 auto;border-radius:24px;border-bottom:1px solid var(--border-2)}
+  .search-wrap{max-width:560px;left:50%;transform:translateX(-50%)}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <button class="back-btn" id="backBtn" aria-label="Back"><svg data-icon="chevL" data-size="20"></svg></button>
+  <h1 id="pageTitle">Dashboard</h1>
+  <button class="top-act" id="searchBtn" aria-label="Search"><svg data-icon="search" data-size="19"></svg></button>
+  <button class="top-act" id="syncBtn" data-sync-status aria-label="Sync"><svg data-icon="cloud" data-size="19"></svg><span data-sync-text hidden></span></button>
+</header>
+
+<main class="screen" id="view"></main>
+
+<button class="fab" id="fab" aria-label="Add"><svg data-icon="plus" data-size="26"></svg></button>
+
+<nav class="navbar" id="nav"></nav>
+
+<div class="search-wrap" id="searchWrap">
+  <div class="search-head">
+    <input id="searchInput" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false" aria-label="Search">
+    <button class="btn btn-ghost sm" id="searchClose">Done</button>
+  </div>
+  <div class="search-results" id="searchResults"></div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<span id="pulse" hidden></span><span id="saveState" hidden></span>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0066FF"/><stop offset="1" stop-color="#00C8FF"/></linearGradient></defs></svg>
+
+<script>
+'use strict';
+/* =========================================================
+   1. CONSTANTS — shared lists (mirrored in the Excel "Lists" sheet)
+   ========================================================= */
+const STORE_KEY = 'secondBrain.data.v1';
+const LISTS = {
+  projectStatus: ['Planning', 'Active', 'On Hold', 'Completed'],
+  priority: ['High', 'Medium', 'Low'],
+  areas: ['Work', 'Personal', 'Learning', 'Health', 'Side Project'],
+  taskStatus: ['To Do', 'In Progress', 'Done'],
+  txType: ['Income', 'Expense'],
+  incomeCats: ['Salary', 'Freelance', 'Investments', 'Gifts', 'Other Income'],
+  expenseCats: ['Housing', 'Food', 'Transport', 'Utilities', 'Subscriptions', 'Health', 'Entertainment', 'Education', 'Shopping', 'Other'],
+  accounts: ['Checking', 'Savings', 'Credit Card', 'Cash'],
+  courseStatus: ['Not Started', 'In Progress', 'Paused', 'Completed'],
+  noteCats: ['Ideas', 'Reference', 'Work', 'Learning', 'Personal', 'Meeting'],
+  moods: ['Rough', 'Low', 'Okay', 'Good', 'Great'] // mood value = index + 1
+};
+const MOOD_COLORS = ['#F43F5E', '#F5A524', '#7C8AA5', '#3D9BFF', '#00D1FF'];
+const STATUS_TONE = { Planning: 'violet', Active: 'blue', 'On Hold': 'amber', Completed: 'green', 'Not Started': 'slate', 'In Progress': 'blue', Paused: 'amber', 'To Do': 'slate', Done: 'green' };
+const PRIO_RANK = { High: 0, Medium: 1, Low: 2 };
+const CAT_COLORS = ['#00A8FF', '#1A8CFF', '#0066FF', '#4F6BFF', '#6C7EF5', '#5B6B8C', '#4A5670', '#3B455A', '#323A4C', '#2A3140'];
+
+const VIEWS = {
+  dashboard: { title: 'Dashboard', sub: 'Your life at a glance', icon: 'grid', group: 'Overview' },
+  projects:  { title: 'Projects', sub: 'Everything you are building', icon: 'folder', group: 'Productivity', add: 'projects' },
+  tasks:     { title: 'Tasks', sub: 'What needs to get done', icon: 'tasks', group: 'Productivity', add: 'tasks' },
+  courses:   { title: 'Courses', sub: 'What you are learning right now', icon: 'cap', group: 'Knowledge', add: 'courses' },
+  notes:     { title: 'Notes', sub: 'Ideas, references and knowledge', icon: 'note', group: 'Knowledge', add: 'notes' },
+  journal:   { title: 'Journal', sub: 'Reflect, record, remember', icon: 'book', group: 'Life', add: 'journal' },
+  finances:  { title: 'Finances', sub: 'Income, spending, budgets and goals', icon: 'wallet', group: 'Life', add: 'transactions' },
+  car:       { title: 'Car Maintenance', sub: 'Fuel and service, live from your Google Sheet', icon: 'car', group: 'Life' }
+};
+const TYPE_META = {
+  projects: { label: 'Projects', icon: 'folder', view: 'projects' },
+  tasks: { label: 'Tasks', icon: 'tasks', view: 'tasks' },
+  transactions: { label: 'Transactions', icon: 'wallet', view: 'finances', tab: 'transactions' },
+  budgets: { label: 'Budgets', icon: 'pie', view: 'finances', tab: 'budgets' },
+  goals: { label: 'Goals', icon: 'target', view: 'finances', tab: 'goals' },
+  journal: { label: 'Journal', icon: 'book', view: 'journal' },
+  courses: { label: 'Courses', icon: 'cap', view: 'courses' },
+  notes: { label: 'Notes', icon: 'note', view: 'notes' },
+  fuel: { label: 'Fuel', icon: 'car', view: 'car' },
+  service: { label: 'Service', icon: 'car', view: 'car' }
+};
+
+/* =========================================================
+   2. UTILITIES
+   ========================================================= */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+let _uidCounter = 0;
+const uid = () => Date.now().toString(36) + (_uidCounter++).toString(36) + Math.random().toString(36).slice(2, 6);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => toDateStr(new Date());
+const addDays = (n, base = new Date()) => { const d = new Date(base); d.setDate(d.getDate() + n); return toDateStr(d); };
+const parseDate = s => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); };
+const daysUntil = s => { if (!s) return null; const t = new Date(); t.setHours(0, 0, 0, 0); return Math.round((parseDate(s) - t) / 86400000); };
+const fmtDate = (s, opts = { month: 'short', day: 'numeric' }) => s ? parseDate(s).toLocaleDateString(undefined, opts) : '—';
+const relDay = s => {
+  const n = daysUntil(s); if (n === null) return '';
+  if (n === 0) return 'Today'; if (n === 1) return 'Tomorrow'; if (n === -1) return 'Yesterday';
+  if (n < 0) return `${-n} days overdue`; if (n < 7) return `In ${n} days`; return fmtDate(s);
+};
+const ago = s => { const n = -daysUntil(s); if (n <= 0) return 'Today'; if (n === 1) return 'Yesterday'; if (n < 30) return `${n} days ago`; return fmtDate(s); };
+const shiftMonth = (m, delta) => { const [y, mo] = m.split('-').map(Number); const d = new Date(y, mo - 1 + delta, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
+const monthLabel = (m, long) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(undefined, long ? { month: 'long', year: 'numeric' } : { month: 'short' }); };
+const num = v => Number(v) || 0;
+const sum = (arr, f) => arr.reduce((s, x) => s + num(f(x)), 0);
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const wordCount = s => (String(s || '').trim().match(/\S+/g) || []).length;
+function money(n, dec = 0, sign = false) {
+  const c = (DB && DB.settings.currency) || '$';
+  const v = Math.abs(n);
+  const s = v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  return (n < 0 ? '−' : (sign && n > 0 ? '+' : '')) + c + s;
+}
+const compact = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(Math.round(v));
+const safeUrl = u => { u = String(u || '').trim(); if (!u) return '#'; if (/^(https?:|mailto:)/i.test(u)) return u; if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return '#'; return 'https://' + u; };
+const byDue = (a, b) => (a.due || '9999').localeCompare(b.due || '9999') || PRIO_RANK[a.priority] - PRIO_RANK[b.priority];
+const find = (type, id) => DB[type].find(x => x.id === id);
+const highlight = (text, q) => { const t = esc(text); if (!q) return t; const i = t.toLowerCase().indexOf(esc(q).toLowerCase()); return i < 0 ? t : t.slice(0, i) + '<mark>' + t.slice(i, i + esc(q).length) + '</mark>' + t.slice(i + esc(q).length); };
+
+/** Minimal, safe rich text: **bold**, *italic*, `code`, "- " bullets, "# " headings, auto-links. */
+function richText(src) {
+  const inline = s => s
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" data-act="noop">$1</a>');
+  let html = '', inList = false;
+  for (const raw of esc(src || '').split('\n')) {
+    const l = raw.trim();
+    const li = l.match(/^[-*•]\s+(.*)/);
+    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${inline(li[1])}</li>`; continue; }
+    if (inList) { html += '</ul>'; inList = false; }
+    if (!l) continue;
+    const h = l.match(/^#{1,3}\s+(.*)/);
+    html += h ? `<h4>${inline(h[1])}</h4>` : `<p>${inline(l)}</p>`;
+  }
+  return html + (inList ? '</ul>' : '');
+}
+
+/* =========================================================
+   3. ICONS — inline SVG, no external dependencies
+   ========================================================= */
+const ICONS = {
+  grid: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.2h7.5A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/>',
+  tasks: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12.2 2.8 2.8L16.5 9"/>',
+  wallet: '<path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2.5"/><path d="M3 6.5A2.5 2.5 0 0 0 5.5 9H19a2 2 0 0 1 2 2v1.5"/><path d="M21 12.5h-4a2 2 0 0 0 0 4h4z"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  cap: '<path d="M22 9.5 12 4.5 2 9.5l10 5z"/><path d="M6 11.5v5c3.5 2.7 8.5 2.7 12 0v-5"/><path d="M22 9.5v5"/>',
+  note: '<path d="M14.5 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.5z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  trash: '<path d="M3 6h18M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6M18.5 6l-.9 13.1A2 2 0 0 1 15.6 21H8.4a2 2 0 0 1-2-1.9L5.5 6"/>',
+  ext: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19.5 7"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1.5 14h5M9.5 8h5M17.5 16h5"/>',
+  calendar: '<rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/>',
+  chevL: '<path d="m15 18-6-6 6-6"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>',
+  pin: '<path d="M12 17v5M8.5 3h7l-1.2 6.5L18 13v2H6v-2l3.7-3.5z"/>',
+  menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
+  download: '<path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/>',
+  upload: '<path d="M12 17V5m0 0-5 5m5-5 5 5M4 21h16"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  columns: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M15 3v18"/>',
+  flame: '<path d="M12 22c4.4 0 7-3 7-6.8 0-4.7-4.2-6.7-5-11.2-2.9 1.9-5.4 5.3-5.2 8.6C7.6 11.7 7 10.6 6.9 9 5.6 10.4 5 12.4 5 14.7 5 19 7.9 22 12 22z"/>',
+  zap: '<path d="M13 2 4 13.5h7.5L10.5 22 20 10.5h-7.5z"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+  arrowR: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+  arrowUp: '<path d="M7 17 17 7M8 7h9v9"/>',
+  arrowDown: '<path d="M17 7 7 17M16 17H7V8"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  pie: '<path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
+  trend: '<path d="m3 17 6-6 4 4 8-8M15 7h6v6"/>',
+  smile: '<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1.8 2 5.2 2 7 0M9 9.5h.01M15 9.5h.01"/>',
+  layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+  play: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5.5 3.5-5.5 3.5z"/>',
+  sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  cloud: '<path d="M7.5 19h9a4 4 0 0 0 .4-8A5.5 5.5 0 0 0 6.3 9.6 3.8 3.8 0 0 0 7.5 19z"/><path d="M12 15.5V9m0 0-2.2 2.2M12 9l2.2 2.2"/>',
+  car: '<path d="M5 17h14M4.5 17v2.5h3V17M16.5 17v2.5h3V17"/><path d="M3.5 17v-4l2-5.2A2 2 0 0 1 7.4 6.5h9.2a2 2 0 0 1 1.9 1.3l2 5.2v4z"/><path d="M4 13h16M7.5 15h1.5M15 15h1.5"/>',
+  sheet: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+  gauge: '<path d="M12 21a9 9 0 1 1 9-9"/><path d="m12 12 5-3.5"/><circle cx="12" cy="12" r="1.5"/>',
+  droplet: '<path d="M12 3s6 6.2 6 10a6 6 0 0 1-12 0c0-3.8 6-10 6-10z"/>',
+  wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5l-9 9a2.8 2.8 0 0 1-4-4z"/><path d="M14.5 6.5 17 4a4 4 0 0 1 3 3l-2.5 2.5"/>'
+};
+const icon = (name, size = 18, sw = 1.9) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+
+/* =========================================================
+   4. STORAGE — localStorage persistence
+   ========================================================= */
+let DB = null;
+const emptyDB = () => ({ version: 1, settings: { name: '', currency: '$' }, projects: [], tasks: [], transactions: [], budgets: [], goals: [], journal: [], courses: [], notes: [], trash: [] });
+function normalizeDB(obj) {
+  const base = emptyDB();
+  const out = Object.assign(base, obj || {});
+  out.settings = Object.assign(emptyDB().settings, (obj && obj.settings) || {});
+  ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'trash'].forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
+  return out;
+}
+function loadDB() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return normalizeDB(JSON.parse(raw));
+  } catch (e) { console.warn('Could not read saved data', e); }
+  return seedDB();
+}
+function saveDB() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(DB));
+    if (typeof Sync !== 'undefined') Sync.queue();
+    const t = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    $('#saveState').textContent = `Saved locally · ${t}`;
+    const p = $('#pulse'); p.classList.remove('flash'); void p.offsetWidth; p.classList.add('flash');
+  } catch (e) {
+    toast('Could not save — browser storage is full or blocked', { tone: 'error' });
+  }
+  renderNav();
+}
+
+/* =========================================================
+   5. DEMO DATA — dates are relative to today so the dashboard feels alive
+   ========================================================= */
+function seedDB() {
+  const db = emptyDB();
+  const d = addDays;
+  const now = Date.now();
+  let tick = 0;
+  const base = o => ({ id: uid(), created: today(), updated: today(), ts: now - (tick++) * 3600e3, ...o });
+
+  const p1 = base({ name: 'Personal Website Redesign', status: 'Active', priority: 'High', area: 'Side Project', start: d(-30), deadline: d(12), progress: 65, link: 'https://example.com', description: 'Rebuild the portfolio on a faster static stack with fresh case studies and a dark theme.' });
+  const p2 = base({ name: 'Home Office Setup', status: 'Active', priority: 'Medium', area: 'Personal', start: d(-10), deadline: d(20), progress: 40, link: '', description: 'Ergonomic desk setup: monitor arm, lighting, cable management and a proper chair.' });
+  const p3 = base({ name: 'Q4 Marketing Report', status: 'Planning', priority: 'High', area: 'Work', start: d(2), deadline: d(35), progress: 10, link: '', description: 'Quarterly performance report with a one-page executive summary on retention and CAC.' });
+  const p4 = base({ name: 'Learn Spanish to A2', status: 'On Hold', priority: 'Low', area: 'Learning', start: d(-60), deadline: d(90), progress: 30, link: '', description: 'Daily practice plus weekly conversation sessions. Paused during the report crunch.' });
+  const p5 = base({ name: 'Budget App Migration', status: 'Completed', priority: 'Medium', area: 'Work', start: d(-90), deadline: d(-5), progress: 100, link: '', description: 'Moved all accounts and categories into the new budgeting workflow.' });
+  db.projects = [p1, p2, p3, p4, p5];
+
+  const T = (title, projectId, priority, due, status, notes = '') => base({ title, projectId, priority, due, status, notes, completed: status === 'Done' ? due : '' });
+  db.tasks = [
+    T('Draft homepage hero copy', p1.id, 'High', d(0), 'In Progress', 'Keep the headline under 8 words.'),
+    T('Pay electricity bill', '', 'High', d(-1), 'To Do'),
+    T('Weekly review', '', 'Medium', d(0), 'To Do', 'Use the checklist in Notes.'),
+    T('Review analytics dashboard numbers', p3.id, 'Medium', d(1), 'To Do'),
+    T('Finish Module 4 exercises', '', 'Medium', d(2), 'To Do', 'Advanced JavaScript Patterns'),
+    T('Order monitor arm', p2.id, 'Medium', d(3), 'To Do'),
+    T('Write case study: budget app', p1.id, 'Medium', d(5), 'To Do'),
+    T('Book dentist appointment', '', 'Low', d(6), 'To Do'),
+    T('Outline report structure', p3.id, 'High', d(9), 'To Do'),
+    T('Set up automated backups', p1.id, 'Low', d(-3), 'Done'),
+    T('Cancel unused streaming subscription', '', 'Low', d(-2), 'Done')
+  ];
+
+  // Six months of transactions, deterministic pseudo-random amounts
+  let seed = 11; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  const nowD = new Date();
+  for (let m = 5; m >= 0; m--) {
+    const first = new Date(nowD.getFullYear(), nowD.getMonth() - m, 1);
+    const lastDay = m === 0 ? nowD.getDate() : new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const add = (day, type, category, description, amount, account = 'Checking') => {
+      if (day > lastDay) return;
+      db.transactions.push(base({ date: toDateStr(new Date(first.getFullYear(), first.getMonth(), day)), type, category, description, amount: Math.round(amount * 100) / 100, account }));
+    };
+    add(1, 'Income', 'Salary', 'Monthly salary', 4200);
+    add(1, 'Expense', 'Housing', 'Rent', 1400);
+    add(3, 'Expense', 'Utilities', 'Electricity & internet', 120 + rnd() * 50);
+    add(5, 'Expense', 'Subscriptions', 'Music + cloud storage', 24.98, 'Credit Card');
+    [4, 11, 18, 25].forEach(day => add(day, 'Expense', 'Food', 'Groceries', 85 + rnd() * 60, 'Credit Card'));
+    [8, 21].forEach(day => add(day, 'Expense', 'Food', 'Dinner out', 30 + rnd() * 45, 'Credit Card'));
+    add(7, 'Expense', 'Transport', 'Monthly transit pass', 95);
+    add(12, 'Income', 'Freelance', 'Freelance design project', 300 + Math.round(rnd() * 900));
+    add(14, 'Expense', 'Transport', 'Fuel', 40 + rnd() * 30, 'Credit Card');
+    add(16, 'Expense', 'Entertainment', 'Cinema & events', 25 + rnd() * 80, 'Credit Card');
+    if (rnd() > 0.35) add(19, 'Expense', 'Shopping', 'Clothing & household', 60 + rnd() * 160, 'Credit Card');
+    add(20, 'Expense', 'Health', 'Gym membership', 45);
+    add(9, 'Expense', 'Education', 'Course materials', 15 + rnd() * 30, 'Credit Card');
+    add(27, 'Income', 'Investments', 'Dividends', 40 + rnd() * 40, 'Savings');
+  }
+
+  db.budgets = [['Housing', 1450], ['Food', 600], ['Transport', 200], ['Utilities', 180], ['Subscriptions', 60], ['Entertainment', 150], ['Shopping', 250], ['Health', 100], ['Education', 60]]
+    .map(([category, limit]) => base({ category, limit }));
+  db.goals = [
+    base({ name: 'Emergency Fund', target: 10000, saved: 6200, deadline: d(180) }),
+    base({ name: 'New Laptop', target: 2200, saved: 1350, deadline: d(75) }),
+    base({ name: 'Japan Trip', target: 5000, saved: 1200, deadline: d(300) })
+  ];
+
+  const J = (dd, title, mood, tags, content) => base({ date: d(dd), title, mood, tags, content });
+  db.journal = [
+    J(0, 'Quiet momentum', 4, ['reflection', 'work'], 'Started the day with a 20-minute walk before opening the laptop — it made a real difference to my focus.\n\nWrapped up most of the hero section draft for the website. Still not fully happy with the headline, but it is **much** closer.\n\nGrateful for:\n- A slow coffee this morning\n- A good call with my design mentor\n- Finally clearing my inbox'),
+    J(-1, 'Too many tabs open', 3, ['focus'], 'Felt scattered today. Jumped between the report, course videos and chores without finishing much.\n\nTomorrow: pick **one** thing before noon and protect that block.'),
+    J(-2, 'Budget check-in', 4, ['money'], 'Reviewed spending for the month. Food is creeping up — mostly dinners out. Moved some money into the laptop fund anyway, which felt good.'),
+    J(-3, 'Long run and big ideas', 5, ['health', 'ideas'], 'Ran 10k for the first time this year. Somewhere around km 7 I had the idea to turn my notes into a small monthly newsletter. Captured it in Notes before I forgot.'),
+    J(-6, 'Rough Monday', 2, ['work'], 'The Q4 report deadline moved up with no warning. Frustrating — but I broke it into tasks and it feels manageable now.'),
+    J(-9, 'Weekend reset', 4, ['reflection', 'routine'], 'Cleaned the desk, planned the week and batch-cooked lunches. Sunday resets are always worth it.'),
+    J(-13, 'First entry', 3, ['start'], 'Setting up this second brain. The goal: one place for projects, money, learning and thoughts — so my head can be for thinking, not remembering.')
+  ];
+
+  const C = (name, platform, instructor, status, start, deadline, lessonsDone, lessonsTotal, link, resources, notes) => base({ name, platform, instructor, status, start, deadline, lessonsDone, lessonsTotal, link, resources, notes });
+  db.courses = [
+    C('Advanced JavaScript Patterns', 'Frontend Academy', 'Dana Ortiz', 'In Progress', d(-40), d(21), 14, 24, 'https://example.com/js-course', 'Course repo: https://github.com\nWeekly exercises PDF\nMDN closures guide: https://developer.mozilla.org', 'Module 4 exercises due this week.'),
+    C('Financial Modeling Fundamentals', 'Coursera', 'Prof. A. Mensah', 'In Progress', d(-25), d(40), 6, 20, 'https://www.coursera.org', 'Template workbook\nCase study: three-statement model', ''),
+    C('UX Research Methods', 'edX', 'Lena Park', 'In Progress', d(-12), d(14), 5, 12, 'https://www.edx.org', 'Interview script template\nAffinity mapping guide', 'Final project: 5 user interviews.'),
+    C('Conversational Spanish A2', 'Language Hub', 'Carlos Vega', 'Paused', d(-90), d(75), 18, 40, '', 'Vocabulary deck\nWeekly conversation club', 'Resume after the Q4 report.'),
+    C('Python for Data Analysis', 'DataCamp', 'R. Iyer', 'Completed', d(-120), d(-30), 30, 30, '', 'pandas cheat sheet', 'Certificate saved to Documents.')
+  ];
+
+  const N = (title, category, tags, pinned, content, ageDays) => base({ title, category, tags, pinned, content, created: d(-ageDays - 5), updated: d(-ageDays), ts: now - ageDays * 86400e3 - (tick++) * 1000 });
+  db.notes = [
+    N('Newsletter idea: Notes to Self', 'Ideas', ['writing', 'side-project'], true, 'A monthly email sharing the best things I learned.\n\n- 3 links worth reading\n- 1 tool I actually use\n- 1 lesson from the month\n\nStart small: write **5 issues** before judging it.', 3),
+    N('Weekly review checklist', 'Reference', ['routine', 'productivity'], true, '# Every Sunday\n- Clear inbox and capture loose tasks\n- Review calendar for the next 2 weeks\n- Update project progress\n- Check budget vs. actual\n- Write a short journal reflection', 9),
+    N('Q4 report — kickoff notes', 'Meeting', ['work', 'q4'], false, 'Stakeholders want a **one-page summary** up front.\n- Focus on retention and CAC trends\n- Draft due before the review meeting\n- Data source: analytics dashboard export', 6),
+    N('Closures in one sentence', 'Learning', ['javascript', 'course'], false, 'A closure is a function bundled with the variables from the scope where it was created — it *remembers* them even after that scope is gone.\n\nUse cases: private state, factories, memoization.', 2),
+    N('Reading list', 'Personal', ['books'], false, '- Deep Work\n- The Psychology of Money\n- Atomic Habits (re-read)\n- Thinking in Systems', 14),
+    N('Home office shopping list', 'Personal', ['home'], false, '- Monitor arm\n- Cable tray\n- Desk lamp with warm light\n- A plant for the shelf', 5),
+    N('Useful links', 'Reference', ['links', 'dev'], false, 'MDN Web Docs: https://developer.mozilla.org\nContrast checker: https://webaim.org/resources/contrastchecker/', 20)
+  ];
+  return db;
+}
+
+/* =========================================================
+   6. FORM SCHEMAS — one schema drives add + edit for every collection
+   ========================================================= */
+const FORMS = {
+  projects: { noun: 'Project', fields: [
+    { k: 'name', l: 'Project name', t: 'text', req: true, full: true, ph: 'e.g. Launch portfolio site' },
+    { k: 'status', l: 'Status', t: 'select', o: LISTS.projectStatus, def: 'Active' },
+    { k: 'priority', l: 'Priority', t: 'select', o: LISTS.priority, def: 'Medium' },
+    { k: 'area', l: 'Area', t: 'select', o: LISTS.areas, def: 'Personal' },
+    { k: 'progress', l: 'Progress', t: 'range', def: 0 },
+    { k: 'start', l: 'Start date', t: 'date', def: () => today() },
+    { k: 'deadline', l: 'Deadline', t: 'date' },
+    { k: 'link', l: 'Link', t: 'url', full: true, ph: 'https://…' },
+    { k: 'description', l: 'Description', t: 'textarea', full: true, rows: 3, ph: 'What is this project about?' }
+  ], after: p => { if (p.status === 'Completed') p.progress = 100; } },
+
+  tasks: { noun: 'Task', fields: [
+    { k: 'title', l: 'Task', t: 'text', req: true, full: true, ph: 'What needs to be done?' },
+    { k: 'priority', l: 'Priority', t: 'select', o: LISTS.priority, def: 'Medium' },
+    { k: 'status', l: 'Status', t: 'select', o: LISTS.taskStatus, def: 'To Do' },
+    { k: 'due', l: 'Due date', t: 'date', def: () => today() },
+    { k: 'projectId', l: 'Project', t: 'select', o: () => [{ v: '', l: '— No project —' }, ...DB.projects.map(p => ({ v: p.id, l: p.name }))] },
+    { k: 'notes', l: 'Notes', t: 'textarea', full: true, rows: 3 }
+  ], after: t => { t.completed = t.status === 'Done' ? (t.completed || today()) : ''; } },
+
+  transactions: { noun: 'Transaction', fields: [
+    { k: 'type', l: 'Type', t: 'select', o: LISTS.txType, def: 'Expense' },
+    { k: 'amount', l: 'Amount', t: 'number', req: true, min: 0, step: '0.01', ph: '0.00' },
+    { k: 'description', l: 'Description', t: 'text', req: true, full: true, ph: 'e.g. Groceries' },
+    { k: 'category', l: 'Category', t: 'select', o: v => v.type === 'Income' ? LISTS.incomeCats : LISTS.expenseCats, dep: 'type' },
+    { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() },
+    { k: 'account', l: 'Account', t: 'select', o: LISTS.accounts, def: 'Checking' }
+  ], validate: v => v.amount <= 0 ? 'Amount must be greater than zero' : '' },
+
+  budgets: { noun: 'Budget', fields: [
+    { k: 'category', l: 'Expense category', t: 'select', o: LISTS.expenseCats },
+    { k: 'limit', l: 'Monthly limit', t: 'number', req: true, min: 0, step: '1', ph: '0' }
+  ], validate: (v, item) => DB.budgets.some(b => b.category === v.category && b !== item) ? `A budget for ${v.category} already exists` : '' },
+
+  goals: { noun: 'Financial Goal', fields: [
+    { k: 'name', l: 'Goal name', t: 'text', req: true, full: true, ph: 'e.g. Emergency fund' },
+    { k: 'target', l: 'Target amount', t: 'number', req: true, min: 0, step: '1' },
+    { k: 'saved', l: 'Saved so far', t: 'number', min: 0, step: '1', def: 0 },
+    { k: 'deadline', l: 'Target date', t: 'date', full: true }
+  ], validate: v => v.target <= 0 ? 'Target must be greater than zero' : '' },
+
+  journal: { noun: 'Journal Entry', wide: true, fields: [
+    { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() },
+    { k: 'tags', l: 'Tags', t: 'tags', ph: 'reflection, work' },
+    { k: 'mood', l: 'Mood', t: 'mood', full: true, def: 4 },
+    { k: 'title', l: 'Title', t: 'text', full: true, ph: 'Give today a headline' },
+    { k: 'content', l: 'Entry', t: 'textarea', req: true, full: true, rows: 11, ph: 'What happened? What did you learn? What are you grateful for?\n\nTip: use - for bullets and **bold** for emphasis.' }
+  ], after: j => { if (!j.title) j.title = fmtDate(j.date, { weekday: 'long', month: 'short', day: 'numeric' }); } },
+
+  courses: { noun: 'Course', fields: [
+    { k: 'name', l: 'Course name', t: 'text', req: true, full: true },
+    { k: 'platform', l: 'Platform', t: 'text', ph: 'Coursera, Udemy…' },
+    { k: 'instructor', l: 'Instructor', t: 'text' },
+    { k: 'status', l: 'Status', t: 'select', o: LISTS.courseStatus, def: 'In Progress' },
+    { k: 'link', l: 'Course link', t: 'url', ph: 'https://…' },
+    { k: 'lessonsDone', l: 'Lessons completed', t: 'number', min: 0, step: '1', def: 0 },
+    { k: 'lessonsTotal', l: 'Total lessons', t: 'number', min: 0, step: '1', def: 10 },
+    { k: 'start', l: 'Start date', t: 'date', def: () => today() },
+    { k: 'deadline', l: 'Deadline', t: 'date' },
+    { k: 'resources', l: 'Resources', t: 'textarea', full: true, rows: 3, ph: 'One per line — links become clickable' },
+    { k: 'notes', l: 'Notes', t: 'textarea', full: true, rows: 2 }
+  ], validate: v => num(v.lessonsDone) > num(v.lessonsTotal) && num(v.lessonsTotal) > 0 ? 'Completed lessons cannot exceed total lessons' : '',
+     after: c => { if (num(c.lessonsTotal) > 0 && num(c.lessonsDone) >= num(c.lessonsTotal)) c.status = 'Completed'; } },
+
+  notes: { noun: 'Note', wide: true, fields: [
+    { k: 'title', l: 'Title', t: 'text', req: true, full: true },
+    { k: 'category', l: 'Category', t: 'select', o: LISTS.noteCats, def: 'Ideas' },
+    { k: 'tags', l: 'Tags', t: 'tags', ph: 'comma, separated' },
+    { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.' },
+    { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
+  ] }
+};
+
+function optionsHTML(f, vals) {
+  const opts = (typeof f.o === 'function' ? f.o(vals) : f.o).map(o => typeof o === 'object' ? o : { v: o, l: o });
+  return opts.map(o => `<option value="${esc(o.v)}"${String(vals[f.k] ?? '') === String(o.v) ? ' selected' : ''}>${esc(o.l)}</option>`).join('');
+}
+function fieldHTML(f, vals) {
+  const v = vals[f.k], id = 'f_' + f.k;
+  let c;
+  switch (f.t) {
+    case 'textarea': c = `<textarea class="input" id="${id}" name="${f.k}" rows="${f.rows || 5}" placeholder="${esc(f.ph || '')}">${esc(v)}</textarea>`; break;
+    case 'select': c = `<select class="select" id="${id}" name="${f.k}">${optionsHTML(f, vals)}</select>`; break;
+    case 'range': c = `<div class="range-wrap"><input type="range" id="${id}" name="${f.k}" min="0" max="100" step="5" value="${num(v)}" style="--p:${num(v)}%"><output>${num(v)}%</output></div>`; break;
+    case 'mood': c = `<div class="mood-pick">${LISTS.moods.map((m, i) => `<button type="button" data-mood="${i + 1}" class="${num(v) === i + 1 ? 'on' : ''}" style="--c:${MOOD_COLORS[i]}"><span class="dot" style="background:${MOOD_COLORS[i]}"></span>${m}</button>`).join('')}<input type="hidden" name="${f.k}" value="${esc(v)}"></div>`; break;
+    case 'check': c = `<label class="toggle"><input type="checkbox" id="${id}" name="${f.k}"${v ? ' checked' : ''}><span></span>${esc(f.cl || '')}</label>`; break;
+    case 'tags': c = `<input class="input" id="${id}" name="${f.k}" value="${esc((v || []).join(', '))}" placeholder="${esc(f.ph || '')}">`; break;
+    default: c = `<input class="input" id="${id}" type="${f.t}" name="${f.k}" value="${esc(v)}"${f.min != null ? ` min="${f.min}"` : ''}${f.step ? ` step="${f.step}"` : ''} placeholder="${esc(f.ph || '')}">`;
+  }
+  return `<div class="field${f.full ? ' full' : ''}" data-k="${f.k}"><label for="${id}">${f.l}${f.req ? ' <b class="req">*</b>' : ''}</label>${c}</div>`;
+}
+function readForm(form, cfg) {
+  const o = {};
+  cfg.fields.forEach(f => {
+    const el = form.elements[f.k]; if (!el) return;
+    let v = f.t === 'check' ? el.checked : el.value;
+    if (f.t === 'tags') v = v.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
+    else if (['number', 'range', 'mood'].includes(f.t)) v = v === '' ? '' : Number(v);
+    else if (typeof v === 'string') v = v.trim();
+    o[f.k] = v;
+  });
+  return o;
+}
+
+/** Opens the add/edit modal for any collection. */
+function openForm(type, item = null, preset = {}) {
+  const cfg = FORMS[type];
+  const vals = {};
+  cfg.fields.forEach(f => {
+    vals[f.k] = item ? item[f.k] : (preset[f.k] ?? (typeof f.def === 'function' ? f.def() : f.def) ?? '');
+  });
+  const titleField = cfg.fields[0].k;
+  const m = openModal(`
+    <div class="modal-head">
+      <div><div class="eyebrow">${item ? 'Edit' : 'New'} ${cfg.noun}</div><h3>${item ? esc(item[titleField] || cfg.noun) : 'Add a ' + cfg.noun.toLowerCase()}</h3></div>
+      <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button>
+    </div>
+    <form class="modal-body" novalidate autocomplete="off"><div class="form-grid">${cfg.fields.map(f => fieldHTML(f, vals)).join('')}</div></form>
+    <div class="modal-foot">
+      ${item ? `<button class="btn btn-danger" data-del style="margin-right:auto">${icon('trash', 15)} Delete</button>` : '<span class="hint" style="margin-right:auto;align-self:center">Ctrl + Enter to save</span>'}
+      <button class="btn btn-ghost" data-close>Cancel</button>
+      <button class="btn btn-primary" data-save>${icon('check', 15)} ${item ? 'Save changes' : 'Create ' + cfg.noun.toLowerCase()}</button>
+    </div>`, cfg.wide);
+  const form = $('form', m);
+
+  form.addEventListener('change', e => {
+    cfg.fields.filter(f => f.dep === e.target.name).forEach(f => { form.elements[f.k].innerHTML = optionsHTML(f, readForm(form, cfg)); });
+  });
+  form.addEventListener('input', e => {
+    if (e.target.type === 'range') { e.target.style.setProperty('--p', e.target.value + '%'); e.target.nextElementSibling.textContent = e.target.value + '%'; }
+    e.target.closest('.field')?.classList.remove('invalid');
+  });
+  form.addEventListener('click', e => {
+    const b = e.target.closest('[data-mood]'); if (!b) return;
+    $$('[data-mood]', form).forEach(x => x.classList.toggle('on', x === b));
+    form.elements.mood.value = b.dataset.mood;
+  });
+
+  const submit = () => {
+    const data = readForm(form, cfg);
+    $$('.field', form).forEach(el => el.classList.remove('invalid'));
+    const missing = cfg.fields.filter(f => f.req && (data[f.k] === '' || data[f.k] == null));
+    if (missing.length) {
+      missing.forEach(f => $(`.field[data-k="${f.k}"]`, form).classList.add('invalid'));
+      form.elements[missing[0].k].focus();
+      toast('Please fill in the required fields', { tone: 'error' });
+      return;
+    }
+    const err = cfg.validate && cfg.validate(data, item);
+    if (err) { toast(err, { tone: 'error' }); return; }
+    let target;
+    if (item) { Object.assign(item, data, { updated: today(), ts: Date.now() }); target = item; }
+    else { target = { id: uid(), created: today(), updated: today(), ts: Date.now(), ...data }; DB[type].unshift(target); }
+    cfg.after && cfg.after(target);
+    if (type === 'journal') UI.journalSel = target.id;
+    saveDB(); closeModal(); render();
+    toast(`${cfg.noun} ${item ? 'updated' : 'created'}`);
+  };
+  $('[data-save]', m).onclick = submit;
+  form.addEventListener('submit', e => { e.preventDefault(); submit(); });
+  form.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+    else if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); submit(); }
+  });
+  if (item) $('[data-del]', m).onclick = () => { closeModal(); removeItem(type, item.id); };
+  setTimeout(() => { const first = $('input:not([type=hidden]):not([type=checkbox]),textarea,select', form); first && first.focus(); }, 60);
+}
+
+/* =========================================================
+   7. MODALS, CONFIRM, TOASTS, DELETE-WITH-UNDO
+   ========================================================= */
+function openModal(inner, wide = false, size = '') {
+  $$('.overlay').forEach(o => o.remove());
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="modal ${wide ? 'wide' : ''} ${size}" role="dialog" aria-modal="true">${inner}</div>`;
+  ov.addEventListener('mousedown', e => { if (e.target === ov) closeModal(); });
+  ov.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeModal(); });
+  document.body.appendChild(ov);
+  return $('.modal', ov);
+}
+function closeModal() {
+  const ov = $('.overlay:not(.closing)'); if (!ov) return;
+  ov.classList.add('closing');
+  setTimeout(() => ov.remove(), 160);
+}
+function confirmDialog(title, text, okLabel, onOk) {
+  const m = openModal(`
+    <div class="modal-head"><h3>${esc(title)}</h3><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-body"><p style="color:var(--text-2)">${text}</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-danger" data-ok>${esc(okLabel)}</button></div>`, false, 'small');
+  $('[data-ok]', m).onclick = () => { closeModal(); onOk(); };
+  setTimeout(() => $('[data-ok]', m).focus(), 50);
+}
+function toast(msg, { tone = 'ok', action, onAction } = {}) {
+  const ms = action ? 6000 : 3200;
+  const el = document.createElement('div');
+  el.className = 'toast ' + tone;
+  el.style.setProperty('--ms', ms + 'ms');
+  el.innerHTML = `<span class="t-ico">${icon(tone === 'error' ? 'x' : 'check', 14, 2.4)}</span><span>${esc(msg)}</span>${action ? `<button>${esc(action)}</button>` : ''}`;
+  const box = $('#toasts');
+  box.appendChild(el);
+  while (box.children.length > 4) box.firstElementChild.remove();
+  let gone = false;
+  const kill = () => { if (gone) return; gone = true; el.classList.add('out'); setTimeout(() => el.remove(), 250); };
+  if (action) $('button', el).onclick = () => { onAction(); kill(); };
+  setTimeout(kill, ms);
+}
+function removeItem(type, id) {
+  const arr = DB[type];
+  const idx = arr.findIndex(x => x.id === id); if (idx < 0) return;
+  const [removed] = arr.splice(idx, 1);
+  DB.trash = (DB.trash || []).filter(t => t.id !== id).concat({ id, ts: Date.now() });
+  const unlinked = [];
+  if (type === 'projects') DB.tasks.forEach(t => { if (t.projectId === id) { t.projectId = ''; unlinked.push(t); } });
+  if (type === 'journal' && UI.journalSel === id) UI.journalSel = null;
+  saveDB(); render();
+  toast(`${FORMS[type].noun} deleted`, { action: 'Undo', onAction: () => {
+    arr.splice(Math.min(idx, arr.length), 0, removed);
+    removed.ts = Date.now();
+    DB.trash = (DB.trash || []).filter(t => t.id !== id);
+    unlinked.forEach(t => { t.projectId = id; });
+    saveDB(); render(); toast(`${FORMS[type].noun} restored`);
+  } });
+}
+
+/* =========================================================
+   8. DERIVED DATA HELPERS
+   ========================================================= */
+function monthTotals(m) {
+  let income = 0, expense = 0;
+  DB.transactions.forEach(x => { if (!x.date || x.date.slice(0, 7) !== m) return; x.type === 'Income' ? income += num(x.amount) : expense += num(x.amount); });
+  return { income, expense, net: income - expense, rate: income ? (income - expense) / income : 0 };
+}
+const spentFor = (cat, m) => sum(DB.transactions.filter(x => x.type === 'Expense' && x.category === cat && x.date.slice(0, 7) === m), x => x.amount);
+const coursePct = c => num(c.lessonsTotal) ? Math.min(100, Math.round(num(c.lessonsDone) / num(c.lessonsTotal) * 100)) : 0;
+const goalPct = g => num(g.target) ? Math.min(100, num(g.saved) / num(g.target) * 100) : 0;
+function goalMonthly(g) {
+  const left = num(g.target) - num(g.saved); if (left <= 0) return 0;
+  const days = daysUntil(g.deadline); if (days === null) return null;
+  return left / Math.max(1, Math.ceil(days / 30.44));
+}
+function journalStreak() {
+  const days = new Set(DB.journal.map(j => j.date));
+  const d = new Date(); let n = 0;
+  if (!days.has(toDateStr(d))) d.setDate(d.getDate() - 1);
+  while (days.has(toDateStr(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+/** Open deadlines across tasks, projects, courses and goals up to N days ahead (overdue included). */
+function upcoming(days = 14) {
+  const end = addDays(days), out = [];
+  DB.tasks.forEach(x => { if (x.status !== 'Done' && x.due && x.due <= end) out.push({ type: 'tasks', kind: 'Task', date: x.due, title: x.title, id: x.id }); });
+  DB.projects.forEach(p => { if (p.status !== 'Completed' && p.deadline && p.deadline <= end) out.push({ type: 'projects', kind: 'Project', date: p.deadline, title: p.name, id: p.id }); });
+  DB.courses.forEach(c => { if (c.status !== 'Completed' && c.deadline && c.deadline <= end) out.push({ type: 'courses', kind: 'Course', date: c.deadline, title: c.name, id: c.id }); });
+  DB.goals.forEach(g => { if (goalPct(g) < 100 && g.deadline && g.deadline <= end) out.push({ type: 'goals', kind: 'Goal', date: g.deadline, title: g.name, id: g.id }); });
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/* =========================================================
+   9. EXPORTS — CSV column order matches the Excel workbook's input columns
+   ========================================================= */
+const projName = id => (DB.projects.find(p => p.id === id) || {}).name || '';
+const EXPORTS = {
+  Projects: { rows: () => DB.projects, cols: [['Project', 'name'], ['Status', 'status'], ['Priority', 'priority'], ['Area', 'area'], ['Start Date', 'start'], ['Deadline', 'deadline'], ['Progress %', r => num(r.progress) + '%'], ['Link', 'link'], ['Description', 'description']] },
+  Tasks: { rows: () => DB.tasks, cols: [['Task', 'title'], ['Project', r => projName(r.projectId)], ['Priority', 'priority'], ['Status', 'status'], ['Due Date', 'due'], ['Notes', 'notes']] },
+  Transactions: { rows: () => [...DB.transactions].sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Type', 'type'], ['Category', 'category'], ['Description', 'description'], ['Amount', 'amount'], ['Account', 'account']] },
+  Budget: { rows: () => DB.budgets, cols: [['Category', 'category'], ['Monthly Budget', 'limit']] },
+  Goals: { rows: () => DB.goals, cols: [['Goal', 'name'], ['Target Amount', 'target'], ['Saved So Far', 'saved'], ['Target Date', 'deadline']] },
+  Journal: { rows: () => [...DB.journal].sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Title', 'title'], ['Mood', r => LISTS.moods[num(r.mood) - 1] || ''], ['Tags', r => (r.tags || []).join(', ')], ['Entry', 'content']] },
+  Courses: { rows: () => DB.courses, cols: [['Course', 'name'], ['Platform', 'platform'], ['Instructor', 'instructor'], ['Status', 'status'], ['Start Date', 'start'], ['Deadline', 'deadline'], ['Lessons Done', 'lessonsDone'], ['Total Lessons', 'lessonsTotal'], ['Link', 'link'], ['Resources', 'resources'], ['Notes', 'notes']] },
+  Notes: { rows: () => DB.notes, cols: [['Title', 'title'], ['Category', 'category'], ['Tags', r => (r.tags || []).join(', ')], ['Pinned', r => r.pinned ? 'Yes' : 'No'], ['Created', 'created'], ['Updated', 'updated'], ['Content', 'content']] }
+};
+function download(filename, content, mime) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+const csvCell = v => { const s = String(v ?? ''); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+function exportCSV(name) {
+  const ex = EXPORTS[name], rows = ex.rows();
+  const lines = [ex.cols.map(c => csvCell(c[0])).join(',')];
+  rows.forEach(r => lines.push(ex.cols.map(c => csvCell(typeof c[1] === 'function' ? c[1](r) : r[c[1]])).join(',')));
+  download(`second-brain-${name.toLowerCase()}-${today()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  toast(`${name} exported · ${plural(rows.length, 'row')}`);
+}
+/* =========================================================
+   SYNC — optional GitHub Gist sync, shared by the desktop and mobile apps.
+   Data lives in one secret gist; each device merges item by item (newest wins)
+   and honours tombstones, so edits *and* deletes travel in both directions.
+   ========================================================= */
+const SYNC_KEY = 'secondBrain.sync.v1';
+const SYNC_FILE = 'second-brain.json';
+const COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes'];
+const TOMB_DAYS = 120;          // how long a deletion is remembered
+const AUTO_EVERY = 5 * 60000;   // background sync interval
+
+const sortKeys = o => Object.keys(o || {}).sort().reduce((a, k) => { a[k] = o[k]; return a; }, {});
+/** Stable fingerprint of a database, independent of array or key order. */
+function canonDB(db) {
+  const o = { settings: sortKeys(db.settings) };
+  COLLECTIONS.forEach(c => {
+    o[c] = [...(db[c] || [])].sort((a, b) => String(a.id).localeCompare(String(b.id))).map(x => JSON.stringify(sortKeys(x)));
+  });
+  o.trash = (db.trash || []).map(t => t.id + ':' + t.ts).sort();
+  return JSON.stringify(o);
+}
+const tombMap = db => (db.trash || []).reduce((m, t) => { if (!m[t.id] || t.ts > m[t.id]) m[t.id] = t.ts; return m; }, {});
+
+/** Merge two databases: per item the most recently touched copy wins. */
+function mergeDB(local, remote) {
+  const out = emptyDB();
+  const tomb = tombMap(local);
+  Object.entries(tombMap(remote)).forEach(([id, ts]) => { if (!tomb[id] || ts > tomb[id]) tomb[id] = ts; });
+  COLLECTIONS.forEach(c => {
+    const by = new Map();
+    (local[c] || []).forEach(x => { if (x && x.id) by.set(x.id, x); });
+    (remote[c] || []).forEach(x => {
+      if (!x || !x.id) return;
+      const cur = by.get(x.id);
+      if (!cur || (Number(x.ts) || 0) > (Number(cur.ts) || 0)) by.set(x.id, x);
+    });
+    out[c] = [...by.values()]
+      .filter(x => !(tomb[x.id] && tomb[x.id] >= (Number(x.ts) || 0)))
+      .sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+  });
+  const cutoff = Date.now() - TOMB_DAYS * 86400000;
+  out.trash = Object.entries(tomb).filter(([, ts]) => ts > cutoff).map(([id, ts]) => ({ id, ts }));
+  const ls = local.settings || {}, rs = remote.settings || {};
+  out.settings = (Number(rs.ts) || 0) > (Number(ls.ts) || 0) ? { ...ls, ...rs } : { ...rs, ...ls };
+  return out;
+}
+
+const relTime = ms => {
+  if (!ms) return 'never';
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+const Sync = {
+  cfg: { token: '', gistId: '', auto: true, device: '', lastSync: 0 },
+  status: 'off', message: 'Not connected', busy: false, applying: false, timer: null,
+
+  load() {
+    try { Object.assign(this.cfg, JSON.parse(localStorage.getItem(SYNC_KEY) || '{}')); } catch (e) { /* ignore */ }
+    if (!this.cfg.device) this.cfg.device = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? 'Phone' : 'Desktop';
+  },
+  save() { try { localStorage.setItem(SYNC_KEY, JSON.stringify(this.cfg)); } catch (e) { /* ignore */ } },
+  connected() { return !!(this.cfg.token && this.cfg.gistId); },
+
+  init() {
+    this.load();
+    if (this.connected()) { this.status = 'idle'; this.message = 'Connected'; setTimeout(() => this.run('startup'), 700); }
+    this.paint();
+    window.addEventListener('online', () => { if (this.connected()) this.run('auto'); });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.connected() && Date.now() - this.cfg.lastSync > 60000) this.run('auto');
+    });
+    setInterval(() => { if (this.connected() && this.cfg.auto && !document.hidden) this.run('auto'); }, AUTO_EVERY);
+    setInterval(() => this.paint(), 30000);
+  },
+  /** Called after every local save; debounced so a burst of edits pushes once. */
+  queue() {
+    if (this.applying || !this.connected() || !this.cfg.auto) return;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.run('auto'), 3500);
+  },
+
+  async api(path, opts = {}) {
+    const res = await fetch('https://api.github.com' + path, {
+      ...opts,
+      headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + this.cfg.token, 'Content-Type': 'application/json', ...(opts.headers || {}) }
+    });
+    if (!res.ok) { const e = new Error(this.explain(res.status)); e.status = res.status; throw e; }
+    return res.json();
+  },
+  explain(status) {
+    if (status === 401) return 'GitHub rejected the token (401). Create a new one with the gist permission.';
+    if (status === 403) return 'GitHub refused the request (403) — the token has no gist access, or you hit the rate limit.';
+    if (status === 404) return 'Gist not found (404). Check the ID, or create a new gist from this panel.';
+    if (status === 422) return 'GitHub could not save the file (422).';
+    return 'GitHub error ' + status + '.';
+  },
+
+  async pull() {
+    const gist = await this.api('/gists/' + this.cfg.gistId);
+    const file = (gist.files || {})[SYNC_FILE] || Object.values(gist.files || {})[0];
+    if (!file) return null;
+    let content = file.content;
+    if (file.truncated || content == null) content = await (await fetch(file.raw_url)).text();
+    if (!String(content).trim()) return null;
+    let payload;
+    try { payload = JSON.parse(content); } catch (e) { throw new Error('The gist file is not valid JSON. Use Overwrite cloud to reset it.'); }
+    return normalizeDB(payload && payload.data ? payload.data : payload);
+  },
+  async push(db) {
+    const content = JSON.stringify({ app: 'Second Brain', version: 1, updated: Date.now(), device: this.cfg.device, data: db }, null, 1);
+    await this.api('/gists/' + this.cfg.gistId, { method: 'PATCH', body: JSON.stringify({ files: { [SYNC_FILE]: { content } } }) });
+  },
+  async createGist() {
+    const content = JSON.stringify({ app: 'Second Brain', version: 1, updated: Date.now(), device: this.cfg.device, data: DB }, null, 1);
+    const g = await this.api('/gists', {
+      method: 'POST',
+      body: JSON.stringify({ description: 'Second Brain — private sync data', public: false, files: { [SYNC_FILE]: { content } } })
+    });
+    return g.id;
+  },
+
+  async run(mode = 'manual') {
+    if (!this.connected()) { if (mode === 'manual') toast('Connect GitHub sync first', { tone: 'error' }); return; }
+    if (this.busy) return;
+    if (!navigator.onLine) {
+      this.status = 'error'; this.message = 'Offline — changes sync when you reconnect'; this.paint();
+      if (mode === 'manual') toast(this.message, { tone: 'error' });
+      return;
+    }
+    this.busy = true; this.status = 'syncing'; this.message = 'Syncing…'; this.paint();
+    try {
+      const remote = await this.pull();
+      const merged = remote ? mergeDB(DB, remote) : DB;
+      const localChanged = canonDB(merged) !== canonDB(DB);
+      const remoteChanged = !remote || canonDB(remote) !== canonDB(merged);
+      if (localChanged) {
+        this.applying = true;
+        DB = merged;
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { /* ignore */ }
+        this.applying = false;
+      }
+      if (remoteChanged) await this.push(merged);
+      this.cfg.lastSync = Date.now(); this.save();
+      this.status = 'idle'; this.message = 'Last synced ' + new Date().toLocaleTimeString();
+      if (localChanged) { try { render(); } catch (e) { /* view not ready */ } }
+      if (mode === 'manual') toast(localChanged ? 'Synced — this device updated' : remoteChanged ? 'Synced — cloud updated' : 'Already up to date');
+      else if (localChanged && mode !== 'startup') toast('Synced changes from another device');
+    } catch (err) {
+      this.applying = false;
+      this.status = 'error'; this.message = err.message || 'Sync failed';
+      if (mode !== 'auto') toast(this.message, { tone: 'error' });
+    } finally {
+      this.busy = false; this.paint();
+    }
+  },
+  async replaceLocal() {
+    try {
+      const remote = await this.pull();
+      if (!remote) { toast('The gist has no data yet', { tone: 'error' }); return; }
+      this.applying = true;
+      DB = remote;
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { /* ignore */ }
+      this.applying = false;
+      this.cfg.lastSync = Date.now(); this.save();
+      render(); this.paint();
+      toast('This device now matches the cloud copy');
+    } catch (err) { toast(err.message, { tone: 'error' }); }
+  },
+  async replaceRemote() {
+    try {
+      await this.push(DB);
+      this.cfg.lastSync = Date.now(); this.save();
+      this.status = 'idle'; this.paint();
+      toast('Cloud copy overwritten with this device');
+    } catch (err) { toast(err.message, { tone: 'error' }); }
+  },
+
+  label() {
+    if (!this.connected()) return 'Sync off';
+    if (this.status === 'syncing') return 'Syncing…';
+    if (this.status === 'error') return 'Sync issue';
+    return this.cfg.lastSync ? 'Synced ' + relTime(this.cfg.lastSync) : 'Connected';
+  },
+  paint() {
+    document.querySelectorAll('[data-sync-status]').forEach(el => {
+      el.dataset.state = this.connected() ? this.status : 'off';
+      const t = el.querySelector('[data-sync-text]');
+      (t || el).textContent = this.label();
+      el.title = this.message;
+    });
+  },
+  setupCode() { return btoa(JSON.stringify({ t: this.cfg.token, g: this.cfg.gistId })); },
+  applyCode(code) {
+    const o = JSON.parse(atob(String(code).trim()));
+    if (!o.t || !o.g) throw new Error('bad code');
+    this.cfg.token = o.t; this.cfg.gistId = o.g; this.save();
+  },
+
+  /** Connect / manage panel — identical in both apps. */
+  openPanel() {
+    this.load();
+    const on = this.connected();
+    const m = openModal(`
+      <div class="modal-head">
+        <div><div class="eyebrow">Multi-device</div><h3>Sync with GitHub</h3></div>
+        <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button>
+      </div>
+      <div class="modal-body">
+        <div class="sync-state" data-sync-status><span class="sync-dot"></span><b data-sync-text>${esc(this.label())}</b></div>
+        <p class="hint" style="margin-top:8px">${esc(on ? this.message : 'Your data stays in this browser until you connect.')}</p>
+        ${on ? `
+        <div class="set-section"><h4>Connected</h4>
+          <p>Gist <code>${esc(this.cfg.gistId)}</code> · this device is called <b>${esc(this.cfg.device)}</b>.</p>
+          <div class="form-grid">
+            <div class="field"><label for="syncDevice">Device name</label><input class="input" id="syncDevice" value="${esc(this.cfg.device)}"></div>
+            <div class="field"><label>Automatic sync</label><label class="toggle"><input type="checkbox" id="syncAuto"${this.cfg.auto ? ' checked' : ''}><span></span>After every change</label></div>
+          </div>
+          <div class="btn-row" style="margin-top:12px">
+            <button class="btn btn-primary" id="syncNow">${icon('sparkle', 15)} Sync now</button>
+            <button class="btn btn-ghost" id="syncCode">${icon('upload', 15)} Copy setup code</button>
+            <button class="btn btn-ghost" id="syncPull">${icon('download', 15)} Replace this device</button>
+            <button class="btn btn-ghost" id="syncPush">${icon('upload', 15)} Overwrite cloud</button>
+            <button class="btn btn-danger" id="syncOff">${icon('x', 15)} Disconnect</button>
+          </div>
+        </div>` : `
+        <div class="set-section"><h4>Option 1 — paste a setup code</h4>
+          <p>Fastest on a phone: on a device that is already connected, open this panel, tap <b>Copy setup code</b>, and paste it here.</p>
+          <div class="field"><label for="syncPaste">Setup code</label><input class="input" id="syncPaste" placeholder="Paste the code" autocomplete="off"></div>
+          <div class="btn-row" style="margin-top:10px"><button class="btn btn-primary" id="syncUseCode">${icon('check', 15)} Connect with code</button></div>
+        </div>
+        <div class="set-section"><h4>Option 2 — connect with a token</h4>
+          <p>On github.com open <b>Settings › Developer settings › Personal access tokens › Tokens (classic)</b>, generate a token and tick only the <b>gist</b> scope. Paste it below; leave the gist ID empty and a new secret gist is created for you.</p>
+          <div class="form-grid">
+            <div class="field full"><label for="syncToken">GitHub token</label><input class="input" id="syncToken" type="password" placeholder="ghp_…" autocomplete="off" spellcheck="false"></div>
+            <div class="field full"><label for="syncGist">Gist ID <span class="hint">(optional)</span></label><input class="input" id="syncGist" placeholder="Leave empty to create a new gist" autocomplete="off" spellcheck="false"></div>
+          </div>
+          <div class="btn-row" style="margin-top:10px"><button class="btn btn-primary" id="syncConnect">${icon('check', 15)} Connect</button></div>
+        </div>`}
+        <div class="set-section"><h4>How it works</h4>
+          <p>Every device merges item by item — the most recently edited version of a task, note or transaction wins, and deletions are remembered for ${TOMB_DAYS} days so they cannot come back. Nothing leaves this browser until you connect.</p>
+          <p><b>Keep the token private.</b> It is stored in this browser's local storage, so anyone who can use this device — or read a setup code — can reach the gist. Use a token limited to the <b>gist</b> scope, never one that can reach your repositories, and revoke it any time at github.com/settings/tokens.</p>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Close</button></div>`, true);
+
+    const val = id => { const el = m.querySelector('#' + id); return el ? el.value.trim() : ''; };
+    const armed = {};
+    const confirmTwice = (btn, fn) => {
+      btn.onclick = () => {
+        if (!armed[btn.id]) {
+          armed[btn.id] = true;
+          btn.dataset.orig = btn.innerHTML;
+          btn.innerHTML = 'Tap again to confirm';
+          btn.classList.add('btn-danger');
+          setTimeout(() => { if (armed[btn.id]) { armed[btn.id] = false; btn.innerHTML = btn.dataset.orig; if (btn.id !== 'syncOff') btn.classList.remove('btn-danger'); } }, 4000);
+          return;
+        }
+        armed[btn.id] = false;
+        fn();
+      };
+    };
+    if (on) {
+      m.querySelector('#syncNow').onclick = () => this.run('manual');
+      m.querySelector('#syncDevice').onchange = e => { this.cfg.device = e.target.value.trim() || 'Device'; this.save(); };
+      m.querySelector('#syncAuto').onchange = e => { this.cfg.auto = e.target.checked; this.save(); toast(this.cfg.auto ? 'Automatic sync on' : 'Automatic sync off'); };
+      m.querySelector('#syncCode').onclick = async () => {
+        const code = this.setupCode();
+        try {
+          await navigator.clipboard.writeText(code);
+          toast('Setup code copied — paste it on your other device');
+        } catch (e) {
+          openModal(`<div class="modal-head"><h3>Setup code</h3><button class="icon-btn" data-close>${icon('x')}</button></div><div class="modal-body"><p class="hint">Copy this and paste it into the sync panel on your other device. It contains your token — do not share it.</p><textarea class="input" rows="4" readonly style="margin-top:10px">${esc(code)}</textarea></div><div class="modal-foot"><button class="btn btn-ghost" data-close>Close</button></div>`);
+        }
+      };
+      confirmTwice(m.querySelector('#syncPull'), () => { closeModal(); this.replaceLocal(); });
+      confirmTwice(m.querySelector('#syncPush'), () => { closeModal(); this.replaceRemote(); });
+      confirmTwice(m.querySelector('#syncOff'), () => {
+        this.cfg.token = ''; this.cfg.gistId = ''; this.cfg.lastSync = 0; this.save();
+        this.status = 'off'; this.message = 'Not connected'; this.paint();
+        closeModal(); toast('Sync disconnected — your data stays on this device');
+      });
+    } else {
+      m.querySelector('#syncUseCode').onclick = () => {
+        try { this.applyCode(val('syncPaste')); } catch (e) { toast('That setup code is not valid', { tone: 'error' }); return; }
+        closeModal(); this.status = 'idle'; this.paint(); this.run('manual');
+      };
+      m.querySelector('#syncConnect').onclick = async () => {
+        const token = val('syncToken');
+        if (!token) { toast('Paste your GitHub token first', { tone: 'error' }); return; }
+        this.cfg.token = token;
+        const btn = m.querySelector('#syncConnect');
+        btn.disabled = true; btn.innerHTML = 'Connecting…';
+        try {
+          this.cfg.gistId = val('syncGist') || await this.createGist();
+          this.save();
+          closeModal();
+          toast('Connected to GitHub');
+          this.status = 'idle'; this.paint();
+          this.run('manual');
+        } catch (err) {
+          this.cfg.token = '';
+          btn.disabled = false;
+          btn.innerHTML = 'Connect';
+          toast(err.message, { tone: 'error' });
+        }
+      };
+    }
+  }
+};
+
+/* =========================================================
+   GOOGLE SHEETS SYNC — talks to the Apps Script Web App.
+   Carries three things both ways:
+     • car fuel log      (Hyundai Elantra sheet)
+     • car service log   (Hyundai Elantra sheet)
+     • expenses          (Expenses Sheet, current month tab)
+   …and stores the whole Second Brain database in a hidden tab, so every
+   device — phone, laptops, GitHub Pages — sees identical data.
+   ========================================================= */
+const SHEETS_KEY = 'secondBrain.sheets.v1';
+const SHEETS_CACHE = 'secondBrain.sheetsCache.v1';
+const POLL_MS = 15000;      // change-probe interval while the tab is visible
+
+const Sheets = {
+  cfg: { url: '', secret: '', auto: true, lastSync: 0 },
+  data: { fuel: [], service: [], expenses: [], meta: null },
+  out: { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [] },
+  stamp: { car: 0, expenses: 0 },
+  status: 'off', message: 'Not connected', busy: false, applying: false, timer: null, poll: null,
+
+  /* ---------- persistence ---------- */
+  load() {
+    try { Object.assign(this.cfg, JSON.parse(localStorage.getItem(SHEETS_KEY) || '{}')); } catch (e) { /* ignore */ }
+    try {
+      const c = JSON.parse(localStorage.getItem(SHEETS_CACHE) || 'null');
+      if (c) { this.data = c.data || this.data; this.out = Object.assign(this.out, c.out || {}); this.stamp = c.stamp || this.stamp; }
+    } catch (e) { /* ignore */ }
+  },
+  save() { try { localStorage.setItem(SHEETS_KEY, JSON.stringify(this.cfg)); } catch (e) { /* ignore */ } },
+  saveCache() {
+    try { localStorage.setItem(SHEETS_CACHE, JSON.stringify({ data: this.data, out: this.out, stamp: this.stamp })); } catch (e) { /* ignore */ }
+  },
+  connected() { return !!this.cfg.url; },
+  pendingCount() { return this.out.newFuel.length + this.out.newService.length + this.out.newExpenses.length + this.out.edits.length + this.out.deletes.length; },
+
+  /* ---------- transport ----------
+     GET for reads. POST uses text/plain so the browser treats it as a simple
+     request — Apps Script never answers CORS preflights, so an
+     application/json body would be blocked before it left the browser.      */
+  async call(action, body = {}, method = 'POST') {
+    if (!this.cfg.url) throw new Error('No Web App URL set');
+    let res;
+    if (method === 'GET') {
+      const u = new URL(this.cfg.url);
+      u.searchParams.set('action', action);
+      u.searchParams.set('secret', this.cfg.secret);
+      res = await fetch(u.toString(), { method: 'GET', redirect: 'follow' });
+    } else {
+      res = await fetch(this.cfg.url, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, secret: this.cfg.secret, ...body })
+      });
+    }
+    if (!res.ok) throw new Error('Google returned ' + res.status + (res.status === 401 ? ' — check the deployment is set to "Anyone"' : ''));
+    let out;
+    try { out = await res.json(); }
+    catch (e) { throw new Error('That URL did not return JSON. Make sure you copied the /exec deployment URL.'); }
+    if (!out.ok) throw new Error(out.error || 'The script reported an error');
+    return out;
+  },
+
+  /* ---------- queueing local changes ---------- */
+  addRow(kind, row) {
+    const key = { fuel: 'newFuel', service: 'newService', expense: 'newExpenses' }[kind];
+    const local = { ...row, id: 'pending-' + uid(), pending: true, source: 'app' };
+    this.out[key].push(row);
+    const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
+    this.data[bucket] = [...(this.data[bucket] || []), local];
+    this.saveCache();
+    this.queue(true);
+    return local;
+  },
+  editRow(kind, sheetRow, values) {
+    this.out.edits.push({ kind, row: sheetRow, values });
+    const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
+    const item = (this.data[bucket] || []).find(x => x.row === sheetRow);
+    if (item) Object.assign(item, values, { pending: true });
+    this.saveCache();
+    this.queue(true);
+  },
+  removeRow(kind, sheetRow) {
+    this.out.deletes.push({ kind, row: sheetRow });
+    const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
+    this.data[bucket] = (this.data[bucket] || []).filter(x => x.row !== sheetRow);
+    this.saveCache();
+    this.queue(true);
+  },
+
+  queue(soon) {
+    if (!this.connected() || !this.cfg.auto) { this.paint(); return; }
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.sync('auto'), soon ? 1200 : 4000);
+    this.paint();
+  },
+
+  /* ---------- the sync cycle ---------- */
+  async sync(mode = 'manual') {
+    if (!this.connected()) { if (mode === 'manual') toast('Add your Web App URL first', { tone: 'error' }); return; }
+    if (this.busy) return;
+    if (!navigator.onLine) {
+      this.status = 'error'; this.message = 'Offline — queued changes will go up when you reconnect';
+      this.paint();
+      if (mode === 'manual') toast(this.message, { tone: 'error' });
+      return;
+    }
+    this.busy = true;
+    this.status = 'syncing'; this.message = 'Syncing with Google Sheets…';
+    this.paint();
+    try {
+      const hasWrites = this.pendingCount() > 0;
+      const brain = typeof DB !== 'undefined' ? DB : null;
+      let out;
+
+      if (hasWrites || mode === 'manual' || mode === 'startup') {
+        // one round trip: apply queued writes, store the brain, read everything back
+        const payload = { ...this.out, brain };
+        out = await this.call('push', { data: payload });
+        this.out = { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [] };
+      } else {
+        // cheap probe first — only pull when a sheet actually changed
+        const s = await this.call('stamp', {}, 'GET');
+        const changed = s.stamp.car !== this.stamp.car || s.stamp.expenses !== this.stamp.expenses;
+        if (!changed) {
+          this.cfg.lastSync = Date.now(); this.save();
+          this.status = 'idle'; this.message = 'Up to date'; this.paint();
+          this.busy = false;
+          return;
+        }
+        out = await this.call('pull', {}, 'GET');
+      }
+
+      if (out.stamp) this.stamp = out.stamp;
+      const d = out.data || {};
+      const before = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses]);
+      this.data = { fuel: d.fuel || [], service: d.service || [], expenses: d.expenses || [], meta: d.meta || null };
+      const sheetChanged = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses]) !== before;
+
+      // merge the Second Brain database using the same engine the gist sync uses
+      let brainChanged = false;
+      if (d.brain && typeof mergeDB === 'function') {
+        const remote = normalizeDB(d.brain);
+        const merged = mergeDB(DB, remote);
+        if (canonDB(merged) !== canonDB(DB)) {
+          this.applying = true;
+          DB = merged;
+          try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { /* ignore */ }
+          this.applying = false;
+          brainChanged = true;
+        }
+      }
+
+      this.saveCache();
+      this.cfg.lastSync = Date.now(); this.save();
+      this.status = 'idle'; this.message = 'Synced ' + new Date().toLocaleTimeString();
+      if (sheetChanged || brainChanged) { try { render(); } catch (e) { /* view not ready */ } }
+      if (mode === 'manual') toast('Google Sheets synced');
+      else if (sheetChanged && mode !== 'startup') toast('Updated from Google Sheets');
+    } catch (err) {
+      this.status = 'error';
+      this.message = err.message || 'Sync failed';
+      if (mode !== 'auto') toast(this.message, { tone: 'error' });
+    } finally {
+      this.busy = false;
+      this.paint();
+    }
+  },
+
+  init() {
+    this.load();
+    this.paint();
+    if (!this.connected()) return;
+    this.status = 'idle';
+    setTimeout(() => this.sync('startup'), 900);
+    clearInterval(this.poll);
+    this.poll = setInterval(() => {
+      if (this.cfg.auto && !document.hidden && this.connected()) this.sync('auto');
+    }, POLL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.connected() && Date.now() - this.cfg.lastSync > 5000) this.sync('auto');
+    });
+    window.addEventListener('online', () => { if (this.connected()) this.sync('auto'); });
+  },
+
+  label() {
+    if (!this.connected()) return 'Sheets off';
+    if (this.status === 'syncing') return 'Syncing…';
+    if (this.status === 'error') return 'Sheets issue';
+    const p = this.pendingCount();
+    if (p) return p + ' queued';
+    return this.cfg.lastSync ? 'Sheets ' + relTime(this.cfg.lastSync) : 'Connected';
+  },
+  paint() {
+    document.querySelectorAll('[data-sheets-status]').forEach(el => {
+      el.dataset.state = this.connected() ? this.status : 'off';
+      const t = el.querySelector('[data-sheets-text]');
+      (t || el).textContent = this.label();
+      el.title = this.message;
+    });
+  },
+
+  /* ---------- setup panel ---------- */
+  openPanel() {
+    this.load();
+    const on = this.connected();
+    const m = openModal(`
+      <div class="modal-head">
+        <div><div class="eyebrow">Car &amp; expenses</div><h3>Google Sheets sync</h3></div>
+        <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button>
+      </div>
+      <div class="modal-body">
+        <div class="sync-state" data-sheets-status><span class="sync-dot"></span><b data-sheets-text>${esc(this.label())}</b></div>
+        <p class="hint" style="margin-top:8px">${esc(this.message)}</p>
+        ${this.data.meta ? `<p class="hint">Reading <b>${esc(this.data.meta.carSheet)}</b> and <b>${esc(this.data.meta.expensesSheet)}</b> (tab ${esc(this.data.meta.expensesTab)}).</p>` : ''}
+        <div class="set-section"><h4>Connection</h4>
+          <p>Paste the <b>/exec</b> URL from your Apps Script deployment, and the same secret you set inside the script.</p>
+          <div class="form-grid">
+            <div class="field full"><label for="shUrl">Web App URL</label><input class="input" id="shUrl" value="${esc(this.cfg.url)}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" spellcheck="false"></div>
+            <div class="field full"><label for="shSecret">Shared secret</label><input class="input" id="shSecret" type="password" value="${esc(this.cfg.secret)}" placeholder="the SECRET from Code.gs" autocomplete="off" spellcheck="false"></div>
+            <div class="field full"><label class="toggle"><input type="checkbox" id="shAuto"${this.cfg.auto ? ' checked' : ''}><span></span>Keep in sync automatically</label></div>
+          </div>
+          <div class="btn-row" style="margin-top:12px">
+            <button class="btn btn-primary" id="shSave">${icon('check', 15)} Save &amp; test</button>
+            ${on ? `<button class="btn btn-ghost" id="shSync">${icon('sparkle', 15)} Sync now</button>
+            <button class="btn btn-ghost" id="shCode">${icon('upload', 15)} Copy setup code</button>
+            <button class="btn btn-danger" id="shOff">${icon('x', 15)} Disconnect</button>` : ''}
+          </div>
+        </div>
+        <div class="set-section"><h4>Setting it up</h4>
+          <p>1 · Open <b>script.google.com</b> → New project, and paste in the <b>Code.gs</b> file from the repo.<br>
+             2 · Set your own <b>SECRET</b> at the top of that file.<br>
+             3 · Deploy → New deployment → <b>Web app</b>, run as <b>Me</b>, access <b>Anyone</b>.<br>
+             4 · Copy the /exec URL here, along with the secret.</p>
+          <p>Changes you make in the sheets appear here within about 15 seconds; changes you make here are written to the sheets straight away.</p>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Close</button></div>`, true);
+
+    const v = id => { const el = m.querySelector('#' + id); return el ? el.value.trim() : ''; };
+    m.querySelector('#shSave').onclick = async () => {
+      const btn = m.querySelector('#shSave');
+      this.cfg.url = v('shUrl').replace(/\/+$/, '');
+      this.cfg.secret = v('shSecret');
+      this.cfg.auto = m.querySelector('#shAuto').checked;
+      if (!this.cfg.url) { toast('Paste the Web App URL first', { tone: 'error' }); return; }
+      btn.disabled = true; btn.innerHTML = 'Testing…';
+      try {
+        await this.call('ping', {}, 'GET');
+        this.save();
+        this.status = 'idle';
+        closeModal();
+        toast('Connected to Google Sheets');
+        this.init();
+        this.sync('manual');
+      } catch (err) {
+        btn.disabled = false; btn.innerHTML = 'Save &amp; test';
+        toast(err.message, { tone: 'error' });
+      }
+    };
+    if (on) {
+      m.querySelector('#shSync').onclick = () => this.sync('manual');
+      m.querySelector('#shCode').onclick = async () => {
+        const code = btoa(JSON.stringify({ u: this.cfg.url, s: this.cfg.secret }));
+        try { await navigator.clipboard.writeText(code); toast('Setup code copied'); }
+        catch (e) { prompt('Copy this setup code', code); }
+      };
+      m.querySelector('#shOff').onclick = () => {
+        this.cfg.url = ''; this.cfg.secret = ''; this.save();
+        this.status = 'off'; this.message = 'Not connected';
+        clearInterval(this.poll);
+        closeModal(); this.paint(); render();
+        toast('Google Sheets disconnected');
+      };
+    }
+  },
+  applyCode(code) {
+    const o = JSON.parse(atob(String(code).trim()));
+    if (!o.u) throw new Error('bad code');
+    this.cfg.url = o.u; this.cfg.secret = o.s || '';
+    this.save();
+  }
+};
+
+/* ---------- derived helpers used by the Car Maintenance screens ---------- */
+const fuelRows = () => [...(Sheets.data.fuel || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+const serviceRows = () => [...(Sheets.data.service || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+const sheetExpenses = () => [...(Sheets.data.expenses || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+/** Fuel economy and spend, derived from consecutive odometer readings. */
+function fuelStats() {
+  const rows = [...(Sheets.data.fuel || [])]
+    .filter(r => r.odometer > 0)
+    .sort((a, b) => a.odometer - b.odometer);
+  const total = sum(Sheets.data.fuel || [], r => r.cost);
+  if (rows.length < 2) return { total, fills: (Sheets.data.fuel || []).length, km: 0, perKm: 0, avgFill: 0, avgDays: 0, last: rows[rows.length - 1] || null };
+  const km = rows[rows.length - 1].odometer - rows[0].odometer;
+  const spentBetween = sum(rows.slice(1), r => r.cost);
+  const days = [];
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].date && rows[i - 1].date) {
+      const d = (parseDate(rows[i].date) - parseDate(rows[i - 1].date)) / 86400000;
+      if (d > 0 && d < 120) days.push(d);
+    }
+  }
+  return {
+    total,
+    fills: (Sheets.data.fuel || []).length,
+    km,
+    perKm: km ? spentBetween / km : 0,
+    avgFill: total / Math.max(1, (Sheets.data.fuel || []).length),
+    avgDays: days.length ? days.reduce((a, b) => a + b, 0) / days.length : 0,
+    last: rows[rows.length - 1]
+  };
+}
+
+/* =========================================================
+   FORMS FOR SHEET-BACKED ROWS
+   These records live in Google Sheets rather than in localStorage, so they
+   use their own add/edit sheet instead of the generic openForm().
+   ========================================================= */
+const SHEET_FORMS = {
+  fuel: {
+    noun: 'Fuel fill-up', kind: 'fuel',
+    fields: [
+      { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() },
+      { k: 'cost', l: 'Cost (AED)', t: 'number', req: true, step: '0.01', min: 0, ph: '150' },
+      { k: 'odometer', l: 'Odometer (km)', t: 'number', req: true, step: '1', min: 0, ph: '229330' }
+    ]
+  },
+  service: {
+    noun: 'Service record', kind: 'service',
+    fields: [
+      { k: 'item', l: 'What was done', t: 'text', req: true, full: true, ph: 'Oil and filter' },
+      { k: 'cost', l: 'Cost (AED)', t: 'number', req: true, step: '0.01', min: 0 },
+      { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() },
+      { k: 'odometer', l: 'Odometer (km)', t: 'number', step: '1', min: 0 }
+    ]
+  },
+  expense: {
+    noun: 'Expense', kind: 'expense',
+    fields: [
+      { k: 'name', l: 'Expense name', t: 'text', req: true, full: true, ph: 'Groceries' },
+      { k: 'amount', l: 'Amount (AED)', t: 'number', req: true, step: '0.01', min: 0 },
+      { k: 'category', l: 'Category', t: 'text', ph: 'Essentials' },
+      { k: 'method', l: 'Payment method', t: 'text', ph: 'ADCB' },
+      { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() }
+    ]
+  }
+};
+
+/** Add or edit a row that lives in Google Sheets. */
+function openSheetForm(kind, item = null) {
+  const cfg = SHEET_FORMS[kind];
+  if (!Sheets.connected()) {
+    toast('Connect Google Sheets first', { tone: 'error' });
+    Sheets.openPanel();
+    return;
+  }
+  const vals = {};
+  cfg.fields.forEach(f => {
+    vals[f.k] = item ? item[f.k] : ((typeof f.def === 'function' ? f.def() : f.def) ?? '');
+  });
+  const canDelete = item && item.row && !item.pending;
+  const m = openModal(`
+    <div class="modal-head">
+      <div><div class="eyebrow">${item ? 'Edit' : 'New'} · Google Sheets</div><h3>${item ? esc(item[cfg.fields[0].k] || cfg.noun) : cfg.noun}</h3></div>
+      <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button>
+    </div>
+    <form class="modal-body" novalidate autocomplete="off">
+      <div class="form-grid">${cfg.fields.map(f => fieldHTML(f, vals)).join('')}</div>
+      <p class="hint" style="margin-top:12px">${item ? 'Saves to row ' + (item.row || '—') + ' of your sheet.' : 'Appended to the bottom of the table in your sheet.'}</p>
+    </form>
+    <div class="modal-foot">
+      ${canDelete ? `<button class="btn btn-danger" data-del>${icon('trash', 15)} <span>Delete</span></button>` : ''}
+      <button class="btn btn-ghost" data-close>Cancel</button>
+      <button class="btn btn-primary" data-save>${icon('check', 15)} ${item ? 'Save to sheet' : 'Add to sheet'}</button>
+    </div>`, cfg.wide);
+
+  const form = $('form', m);
+  form.addEventListener('input', e => e.target.closest('.field')?.classList.remove('invalid'));
+
+  const submit = () => {
+    const data = readForm(form, cfg);
+    $$('.field', form).forEach(el => el.classList.remove('invalid'));
+    const missing = cfg.fields.filter(f => f.req && (data[f.k] === '' || data[f.k] == null));
+    if (missing.length) {
+      missing.forEach(f => $(`.field[data-k="${f.k}"]`, form).classList.add('invalid'));
+      toast('Please fill in the required fields', { tone: 'error' });
+      return;
+    }
+    if (item && item.row && !item.pending) {
+      Sheets.editRow(kind, item.row, data);
+      toast(`${cfg.noun} updated — saving to your sheet`);
+    } else {
+      Sheets.addRow(kind, data);
+      toast(`${cfg.noun} added — saving to your sheet`);
+    }
+    closeModal();
+    render();
+  };
+  $('[data-save]', m).onclick = submit;
+  form.addEventListener('submit', e => { e.preventDefault(); submit(); });
+  form.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); submit(); }
+  });
+  if (canDelete) {
+    $('[data-del]', m).onclick = () => {
+      Sheets.removeRow(kind, item.row);
+      closeModal(); render();
+      toast(`${cfg.noun} deleted from your sheet`);
+    };
+  }
+}
+
+/* =========================================================
+   MOBILE UI — bottom-tab shell, phone screens, sheet forms.
+   Data model, schemas and sync are shared with the desktop app.
+   ========================================================= */
+const NAV = [
+  { k: 'home', l: 'Home', ic: 'grid' },
+  { k: 'tasks', l: 'Tasks', ic: 'tasks' },
+  { k: 'money', l: 'Money', ic: 'wallet' },
+  { k: 'notes', l: 'Notes', ic: 'note' },
+  { k: 'more', l: 'More', ic: 'layers' }
+];
+const SUBVIEWS = ['projects', 'courses', 'journal', 'car', 'settings'];
+const TITLES = { home: 'Dashboard', tasks: 'Tasks', money: 'Finances', notes: 'Notes', more: 'More', projects: 'Projects', courses: 'Courses', journal: 'Journal', car: 'Car', settings: 'Settings' };
+
+const UI = {
+  view: 'home', prev: 'home',
+  taskFilter: 'today', moneyTab: 'activity', finMonth: today().slice(0, 7),
+  noteCat: 'All', noteQuery: '', projFilter: 'All', courseFilter: 'All', carTab: 'fuel',
+  journalSel: null, captureType: 'task'
+};
+
+/* ---------- helpers ---------- */
+const SCREENS = {};
+const addType = () => ({
+  home: 'tasks', tasks: 'tasks', notes: 'notes', projects: 'projects', courses: 'courses', journal: 'journal',
+  car: 'sheetRow',
+  money: { activity: 'transactions', budgets: 'budgets', goals: 'goals', sheet: 'sheetRow' }[UI.moneyTab]
+}[UI.view] || null);
+const cardHead = (ic, title, right = '') => `<div class="card-head"><div class="card-title">${icon(ic, 15)}${title}</div>${right}</div>`;
+const emptyState = (ic, title, text, btn = '') => `<div class="empty"><div class="e-ico">${icon(ic, 22)}</div><h4>${title}</h4><p>${text}</p>${btn}</div>`;
+const addBtn = (type, label, cls = 'btn-primary') => `<button class="btn ${cls}" data-act="add" data-type="${type}">${icon('plus', 16)} ${label}</button>`;
+const seg = (key, opts) => `<div class="seg">${opts.map(o => { const [v, l, n] = Array.isArray(o) ? o : [o, o]; return `<button class="${UI[key] === v ? 'on' : ''}" data-act="set" data-key="${key}" data-val="${esc(v)}">${l}${n != null ? `<span class="n">${n}</span>` : ''}</button>`; }).join('')}</div>`;
+const statTile = (ic, label, value, sub, cls = '', act = '') => `<div class="stat"${act ? ` data-act="go" data-val="${act}"` : ''}><div class="label">${icon(ic, 14)}${label}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></div>`;
+const dateBlock = (s, late, soon) => { const d = parseDate(s); return `<div class="date-block${late ? ' late' : soon ? ' soon' : ''}"><b>${d.getDate()}</b><span>${d.toLocaleDateString(undefined, { month: 'short' })}</span></div>`; };
+const moodChip = m => m ? `<span class="chip" style="color:${MOOD_COLORS[m - 1]};border-color:${MOOD_COLORS[m - 1]}55;background:${MOOD_COLORS[m - 1]}18"><span class="dot"></span>${LISTS.moods[m - 1]}</span>` : '';
+const entryCount = n => n + ' ' + (n === 1 ? 'entry' : 'entries');
+const barTone = pct => pct > 100 ? 'red' : pct >= 85 ? 'amber' : '';
+function ring(pct, size = 74, stroke = 7) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, off = c * (1 - Math.min(100, pct) / 100);
+  return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle class="ring-bg" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}"/><circle class="ring-fg" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 ${size / 2} ${size / 2})"/><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle">${Math.round(pct)}%</text></svg>`;
+}
+function miniChart(endMonth, n = 6) {
+  const months = []; for (let i = n - 1; i >= 0; i--) months.push(shiftMonth(endMonth, -i));
+  const data = months.map(m => ({ m, ...monthTotals(m) }));
+  const max = Math.max(100, ...data.map(d => Math.max(d.income, d.expense))) * 1.1;
+  const W = 340, H = 150, pl = 34, pb = 20, pt = 6, cw = (W - pl) / n, bw = Math.min(14, cw / 3.4);
+  const y = v => pt + (H - pt - pb) * (1 - v / max);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Income and expenses, last ${n} months"><defs><linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00B4FF"/><stop offset="1" stop-color="#0066FF"/></linearGradient><linearGradient id="gEx" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5B6B8C"/><stop offset="1" stop-color="#2F3A50"/></linearGradient></defs>`;
+  for (let i = 0; i <= 3; i++) { const v = max * i / 3, yy = y(v).toFixed(1); s += `<line class="grid" x1="${pl}" x2="${W}" y1="${yy}" y2="${yy}"/><text class="axis" x="${pl - 6}" y="${+yy + 4}" text-anchor="end" style="font-size:9px">${compact(v)}</text>`; }
+  data.forEach((d, i) => {
+    const cx = pl + cw * i + cw / 2;
+    s += `<rect x="${(cx - bw - 1.5).toFixed(1)}" y="${y(d.income).toFixed(1)}" width="${bw}" height="${(H - pb - y(d.income)).toFixed(1)}" rx="3" fill="url(#gIn)"/>
+      <rect x="${(cx + 1.5).toFixed(1)}" y="${y(d.expense).toFixed(1)}" width="${bw}" height="${(H - pb - y(d.expense)).toFixed(1)}" rx="3" fill="url(#gEx)"/>
+      <text class="axis${d.m === endMonth ? ' cur' : ''}" x="${cx.toFixed(1)}" y="${H - 6}" text-anchor="middle" style="font-size:9.5px">${monthLabel(d.m)}</text>`;
+  });
+  return s + '</svg>';
+}
+const chartLegend = () => `<div class="legend"><span><i style="background:linear-gradient(#00B4FF,#0066FF)"></i>In</span><span><i style="background:#4A5670"></i>Out</span></div>`;
+
+function taskItem(x) {
+  const done = x.status === 'Done', n = daysUntil(x.due);
+  const p = DB.projects.find(p => p.id === x.projectId);
+  const dueCls = done || n === null ? '' : n < 0 ? 'txt-red' : n === 0 ? 'txt-amber' : '';
+  return `<div class="item${done ? ' done' : ''}" data-act="edit" data-type="tasks" data-id="${x.id}">
+    <button class="check${done ? ' on' : ''}" data-act="toggleTask" data-id="${x.id}" aria-label="Toggle complete">${icon('check', 15, 3)}</button>
+    <div class="grow"><div class="t">${esc(x.title)}</div>
+      <div class="s"><span class="dot" style="background:var(--${{ High: 'red', Medium: 'amber', Low: 'slate' }[x.priority]})"></span>${x.priority}${x.due ? ` · <span class="${dueCls}">${done ? fmtDate(x.due) : relDay(x.due)}</span>` : ''}${p ? ` · ${esc(p.name)}` : ''}</div></div>
+    ${x.status === 'In Progress' ? '<span class="chip blue">Now</span>' : ''}
+  </div>`;
+}
+function deadlineItem(u) {
+  const n = daysUntil(u.date);
+  const tone = { Task: 'slate', Project: 'blue', Course: 'violet', Goal: 'green' }[u.kind];
+  return `<div class="item" data-act="edit" data-type="${u.type}" data-id="${u.id}">
+    ${dateBlock(u.date, n < 0, n <= 2)}
+    <div class="grow"><div class="t">${esc(u.title)}</div><div class="s"><span class="chip ${tone}">${u.kind}</span></div></div>
+    <span class="when ${n < 0 ? 'txt-red' : n <= 2 ? 'txt-blue' : ''}">${relDay(u.date)}</span></div>`;
+}
+
+/* =========================================================
+   SCREENS
+   ========================================================= */
+SCREENS.home = () => {
+  const t = today(), m = t.slice(0, 7);
+  const open = DB.tasks.filter(x => x.status !== 'Done');
+  const overdue = open.filter(x => x.due && x.due < t);
+  const dueToday = open.filter(x => x.due === t);
+  const fin = monthTotals(m);
+  const active = DB.courses.filter(c => c.status === 'In Progress');
+  const avgCourse = active.length ? Math.round(sum(active, coursePct) / active.length) : 0;
+  const hr = new Date().getHours();
+  const greet = hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+  const focus = [...overdue, ...dueToday].sort(byDue).slice(0, 6);
+  const up = upcoming(14).filter(u => u.date >= t).slice(0, 5);
+  const lastJ = [...DB.journal].sort((a, b) => b.date.localeCompare(a.date))[0];
+  const note = [...DB.notes].sort((a, b) => (b.pinned - a.pinned) || num(b.ts) - num(a.ts))[0];
+
+  return `
+  <div class="card">
+    <div class="eyebrow">${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+    <h2 style="font-size:23px;font-weight:700;letter-spacing:-.03em;margin:6px 0 6px">${greet}${DB.settings.name ? ', ' + esc(DB.settings.name) : ''}.</h2>
+    <p class="hint" style="margin-bottom:14px">${plural(dueToday.length, 'task')} due today${overdue.length ? `, <b class="txt-red">${overdue.length} overdue</b>` : ''} · ${plural(up.length, 'deadline')} ahead.</p>
+    <div class="capture">${icon('zap', 17)}<input id="captureInput" placeholder="Capture a ${UI.captureType}…" aria-label="Quick capture"><button class="icon-btn" data-act="capture" aria-label="Save">${icon('arrowR', 20)}</button></div>
+    ${seg('captureType', [['task', 'Task'], ['note', 'Note'], ['journal', 'Journal']])}
+  </div>
+
+  <div class="stat-grid">
+    ${statTile('tasks', 'Open tasks', open.length, `${overdue.length} overdue · ${dueToday.length} today`, '', 'tasks')}
+    ${statTile('wallet', 'Net · ' + monthLabel(m), money(fin.net, 0, true), `${money(fin.income)} in · ${money(fin.expense)} out`, fin.net < 0 ? 'txt-red' : '', 'money')}
+    ${statTile('flame', 'Journal streak', plural(journalStreak(), 'day'), `${DB.journal.length} entries`, '', 'journal')}
+    ${statTile('cap', 'Learning', avgCourse + '%', plural(active.length, 'active course'), '', 'courses')}
+  </div>
+
+  <div class="card">
+    ${cardHead('target', focus.length ? 'Today' : 'Up next', `<button class="link-btn" data-act="go" data-val="tasks">All ${icon('arrowR', 13)}</button>`)}
+    <div class="list">${focus.length ? focus.map(taskItem).join('') : (open.length ? [...open].sort(byDue).slice(0, 4).map(taskItem).join('') : emptyState('check', 'All clear', 'No open tasks right now.'))}</div>
+  </div>
+
+  <div class="card">
+    ${cardHead('clock', 'Upcoming deadlines')}
+    <div class="list">${up.length ? up.map(deadlineItem).join('') : emptyState('calendar', 'Nothing due', 'No deadlines in the next two weeks.')}</div>
+  </div>
+
+  <div class="card">
+    ${cardHead('trend', 'Cash flow', chartLegend())}
+    ${miniChart(m)}
+  </div>
+
+  <div class="grid-2">
+    <div class="card tap" style="margin:0" ${lastJ ? `data-act="openJournal" data-id="${lastJ.id}"` : 'data-act="add" data-type="journal"'}>
+      <div class="card-title" style="margin-bottom:8px">${icon('book', 15)}Journal</div>
+      ${lastJ ? `<div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(lastJ.title)}</div><p class="hint clamp">${esc(String(lastJ.content || '').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Write your first entry</p>'}
+    </div>
+    <div class="card tap" style="margin:0" ${note ? `data-act="edit" data-type="notes" data-id="${note.id}"` : 'data-act="add" data-type="notes"'}>
+      <div class="card-title" style="margin-bottom:8px">${icon('note', 15)}Notes</div>
+      ${note ? `<div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(note.title)}</div><p class="hint clamp">${esc(String(note.content || '').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Capture an idea</p>'}
+    </div>
+  </div>`;
+};
+
+SCREENS.tasks = () => {
+  const t = today();
+  const isOpen = x => x.status !== 'Done';
+  const filters = {
+    today: x => isOpen(x) && x.due && x.due <= t,
+    open: isOpen,
+    upcoming: x => isOpen(x) && x.due && x.due > t,
+    done: x => !isOpen(x),
+    all: () => true
+  };
+  const c = k => DB.tasks.filter(filters[k]).length;
+  const list = DB.tasks.filter(filters[UI.taskFilter] || filters.open);
+  const groups = { Overdue: [], Today: [], Tomorrow: [], 'Next 7 days': [], Later: [], 'No due date': [], Completed: [] };
+  list.forEach(x => {
+    if (x.status === 'Done') return groups.Completed.push(x);
+    if (!x.due) return groups['No due date'].push(x);
+    const n = daysUntil(x.due);
+    (n < 0 ? groups.Overdue : n === 0 ? groups.Today : n === 1 ? groups.Tomorrow : n <= 7 ? groups['Next 7 days'] : groups.Later).push(x);
+  });
+  Object.values(groups).forEach(a => a.sort(byDue));
+  const filled = Object.entries(groups).filter(([, a]) => a.length);
+  const doneToday = DB.tasks.filter(x => x.completed === t).length;
+
+  return `
+  ${seg('taskFilter', [['today', 'Today', c('today')], ['open', 'Open', c('open')], ['upcoming', 'Upcoming', c('upcoming')], ['done', 'Done', c('done')], ['all', 'All', c('all')]])}
+  <div class="card"><div class="row" style="justify-content:space-between">
+    <div><div style="font-size:22px;font-weight:700;letter-spacing:-.03em">${DB.tasks.filter(isOpen).length}</div><div class="hint">open</div></div>
+    <div><div style="font-size:22px;font-weight:700;letter-spacing:-.03em" class="${c('today') ? 'txt-amber' : ''}">${DB.tasks.filter(x => isOpen(x) && x.due && x.due < t).length}</div><div class="hint">overdue</div></div>
+    <div><div style="font-size:22px;font-weight:700;letter-spacing:-.03em" class="txt-blue">${doneToday}</div><div class="hint">done today</div></div>
+    <button class="btn btn-ghost sm" data-act="add" data-type="tasks">${icon('plus', 15)} Add</button>
+  </div></div>
+  ${filled.length ? filled.map(([name, items]) => `<div class="section-title${name === 'Overdue' ? ' late' : ''}">${name}<span class="n">${items.length}</span></div><div class="card"><div class="list">${items.map(taskItem).join('')}</div></div>`).join('')
+    : `<div class="card">${emptyState('check', UI.taskFilter === 'done' ? 'Nothing completed yet' : 'Nothing here', 'Tap + to add a task.', addBtn('tasks', 'New task'))}</div>`}`;
+};
+
+SCREENS.money = () => {
+  const m = UI.finMonth, fin = monthTotals(m);
+  const head = `
+  <div class="card"><div class="row" style="justify-content:space-between">
+    <button class="icon-btn" data-act="month" data-val="-1" aria-label="Previous month">${icon('chevL', 20)}</button>
+    <b style="font-size:15px">${monthLabel(m, true)}</b>
+    <button class="icon-btn" data-act="month" data-val="1" aria-label="Next month">${icon('chevR', 20)}</button>
+  </div></div>
+  <div class="stat-grid">
+    ${statTile('arrowDown', 'Income', money(fin.income), entryCount(DB.transactions.filter(x => x.date.slice(0, 7) === m).length))}
+    ${statTile('arrowUp', 'Expenses', money(fin.expense), 'this month')}
+    ${statTile('wallet', 'Net', money(fin.net, 0, true), fin.net < 0 ? 'spending over income' : 'kept this month', fin.net < 0 ? 'txt-red' : '')}
+    ${statTile('target', 'Savings rate', fin.income ? Math.round(fin.rate * 100) + '%' : '—', 'of income')}
+  </div>
+  ${seg('moneyTab', [['activity', 'Activity'], ['budgets', 'Budgets'], ['goals', 'Goals'], ['sheet', 'Sheet']])}`;
+
+  if (UI.moneyTab === 'sheet') {
+    if (!Sheets.connected()) return head + sheetOffCard('your expense rows');
+    const rows = sheetExpenses();
+    const total = sum(rows, r => r.amount);
+    return head + `
+      <div class="card">${cardHead('sheet', 'Google Sheet', `<span class="hint">${aedc(total)}</span>`)}
+        <p class="hint" style="margin-bottom:10px">${Sheets.data.meta ? esc(Sheets.data.meta.expensesSheet) + ' · ' + esc(Sheets.data.meta.expensesTab) : 'Live rows'}</p>
+        <div class="list">${rows.length ? rows.map(r => `<div class="item" data-act="sheetEdit" data-kind="expense" data-id="${esc(r.id)}">
+          <span class="tx-ico Expense">${icon('sheet', 16)}</span>
+          <div class="grow"><div class="t">${esc(r.name)}${r.pending ? ' <span class="chip amber">saving</span>' : ''}</div>
+            <div class="s">${esc(r.category || 'Uncategorised')}${r.date ? ' · ' + fmtDate(r.date) : ''}</div></div>
+          <span class="amt">${aedc(r.amount)}</span></div>`).join('')
+          : emptyState('sheet', 'No rows', 'Nothing in the current month tab yet.')}</div>
+      </div>
+      <div class="btn-row"><button class="btn btn-ghost" data-act="sheetSync">${icon('sparkle', 16)} Sync now</button>
+        <button class="btn btn-primary" data-act="sheetAdd" data-kind="expense">${icon('plus', 16)} Add expense</button></div>`;
+  }
+
+  if (UI.moneyTab === 'budgets') {
+    const rows = DB.budgets.map(b => { const spent = spentFor(b.category, m); return { b, spent, pct: num(b.limit) ? spent / num(b.limit) * 100 : 0 }; }).sort((a, b) => b.pct - a.pct);
+    const total = sum(DB.budgets, b => b.limit), spent = sum(rows, r => r.spent);
+    return head + (rows.length ? `
+      <div class="card">${cardHead('pie', 'All budgets', `<span class="hint">${money(spent)} / ${money(total)}</span>`)}
+        <div class="bar lg ${barTone(total ? spent / total * 100 : 0)}"><i style="width:${Math.min(100, total ? spent / total * 100 : 0)}%"></i></div></div>
+      ${rows.map(({ b, spent, pct }) => `<div class="card tap" data-act="edit" data-type="budgets" data-id="${b.id}">
+        <div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:15.5px">${esc(b.category)}</b><span class="chip ${pct > 100 ? 'red' : pct >= 85 ? 'amber' : 'blue'}">${Math.round(pct)}%</span></div>
+        <div class="hint" style="margin-bottom:9px"><b style="color:var(--text);font-size:17px">${money(spent)}</b> of ${money(num(b.limit))}</div>
+        <div class="bar ${barTone(pct)}"><i style="width:${Math.min(100, pct)}%"></i></div>
+        <div class="hint" style="margin-top:9px">${num(b.limit) - spent < 0 ? `<span class="txt-red">${money(spent - num(b.limit))} over budget</span>` : money(num(b.limit) - spent) + ' left'}</div>
+      </div>`).join('')}`
+      : `<div class="card">${emptyState('pie', 'No budgets yet', 'Set a monthly limit per category.', addBtn('budgets', 'Add budget'))}</div>`);
+  }
+  if (UI.moneyTab === 'goals') {
+    return head + (DB.goals.length ? DB.goals.map(g => {
+      const pct = goalPct(g), monthly = goalMonthly(g);
+      return `<div class="card"><div class="row" style="gap:16px">
+        ${ring(pct)}
+        <div class="grow" data-act="edit" data-type="goals" data-id="${g.id}">
+          <b style="font-size:16px">${esc(g.name)}</b>
+          <div class="hint" style="margin:5px 0"><b style="color:var(--text);font-size:16px">${money(num(g.saved))}</b> of ${money(num(g.target))}</div>
+          <div class="hint">${g.deadline ? fmtDate(g.deadline, { month: 'short', year: 'numeric' }) : 'No date'}${pct >= 100 ? ' · <span class="txt-green">reached</span>' : monthly ? ` · ${money(monthly)}/mo needed` : ''}</div>
+        </div></div>
+        ${pct < 100 ? `<button class="btn btn-ghost sm" style="width:100%;margin-top:12px" data-act="addFunds" data-id="${g.id}">${icon('plus', 15)} Add funds</button>` : ''}
+      </div>`;
+    }).join('') : `<div class="card">${emptyState('target', 'No goals yet', 'Save toward something that matters.', addBtn('goals', 'Create a goal'))}</div>`);
+  }
+  const list = DB.transactions.filter(x => x.date.slice(0, 7) === m).sort((a, b) => b.date.localeCompare(a.date) || num(b.ts) - num(a.ts));
+  const cats = {}; list.filter(x => x.type === 'Expense').forEach(x => { cats[x.category] = (cats[x.category] || 0) + num(x.amount); });
+  const top = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  return head + `
+  <div class="card">${cardHead('trend', 'Last 6 months', chartLegend())}${miniChart(m)}</div>
+  ${top.length ? `<div class="card">${cardHead('pie', 'Top spending')}${top.map(([c, v]) => `<div style="margin-bottom:11px"><div class="row" style="justify-content:space-between;font-size:13.5px;margin-bottom:6px"><span>${esc(c)}</span><span class="mono hint">${money(v)}</span></div><div class="bar"><i style="width:${v / top[0][1] * 100}%"></i></div></div>`).join('')}</div>` : ''}
+  <div class="card">${cardHead('layers', monthLabel(m, true), `<span class="hint">${entryCount(list.length)}</span>`)}
+    <div class="list">${list.length ? list.map(x => `<div class="item" data-act="edit" data-type="transactions" data-id="${x.id}">
+      <span class="tx-ico ${x.type}">${icon(x.type === 'Income' ? 'arrowDown' : 'arrowUp', 16)}</span>
+      <div class="grow"><div class="t">${esc(x.description)}</div><div class="s">${esc(x.category)} · ${fmtDate(x.date)}${x.account ? ' · ' + esc(x.account) : ''}</div></div>
+      <span class="amt ${x.type}">${x.type === 'Income' ? '+' : '−'}${money(num(x.amount), 2)}</span></div>`).join('')
+      : emptyState('wallet', 'No transactions', `Nothing recorded for ${monthLabel(m, true)}.`, addBtn('transactions', 'Add transaction'))}</div>
+  </div>`;
+};
+
+SCREENS.notes = () => {
+  const q = UI.noteQuery.toLowerCase().trim();
+  const list = DB.notes.filter(n =>
+    (UI.noteCat === 'All' || (UI.noteCat === 'Pinned' ? n.pinned : n.category === UI.noteCat)) &&
+    (!q || [n.title, n.content, (n.tags || []).join(' ')].join(' ').toLowerCase().includes(q))
+  ).sort((a, b) => (b.pinned - a.pinned) || num(b.ts) - num(a.ts));
+  const cats = ['All', 'Pinned', ...LISTS.noteCats];
+  return `
+  <div class="card" style="padding:10px"><input class="input" type="search" data-bind="noteQuery" value="${esc(UI.noteQuery)}" placeholder="Search notes…" aria-label="Search notes"></div>
+  ${seg('noteCat', cats.map(c => [c, c, c === 'All' ? DB.notes.length : c === 'Pinned' ? DB.notes.filter(n => n.pinned).length : DB.notes.filter(n => n.category === c).length]))}
+  ${list.length ? list.map(n => `<div class="card tap" data-act="edit" data-type="notes" data-id="${n.id}">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
+      <button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" aria-label="Pin">${icon('pin', 17)}</button></div>
+    <b style="font-size:16px;letter-spacing:-.01em">${highlight(n.title, q)}</b>
+    <div class="prose clamp" style="margin-top:7px;font-size:14px">${richText(n.content)}</div>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${(n.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}<span class="hint" style="margin-left:auto">${ago(n.updated)}</span></div>
+  </div>`).join('') : `<div class="card">${emptyState('note', DB.notes.length ? 'No matches' : 'No notes yet', DB.notes.length ? 'Try another category or search.' : 'Capture ideas and references.', addBtn('notes', 'New note'))}</div>`}`;
+};
+
+SCREENS.more = () => {
+  const tile = (view, ic, name, sub) => `<button class="more-tile" data-act="go" data-val="${view}"><span class="ic">${icon(ic, 20)}</span><b>${name}</b><span>${sub}</span></button>`;
+  return `
+  <div class="card tap" data-act="syncPanel">
+    ${cardHead('cloud', 'Sync')}
+    <div class="sync-state" data-sync-status><span class="sync-dot"></span><b data-sync-text>${esc(Sync.label())}</b></div>
+    <p class="hint" style="margin-top:9px">${esc(Sync.connected() ? Sync.message : 'Connect a private GitHub gist to share data with your computer.')}</p>
+  </div>
+  <div class="more-grid">
+    ${tile('projects', 'folder', 'Projects', plural(DB.projects.filter(p => p.status === 'Active').length, 'active project'))}
+    ${tile('courses', 'cap', 'Courses', plural(DB.courses.filter(c => c.status === 'In Progress').length, 'in progress'))}
+    ${tile('journal', 'book', 'Journal', plural(journalStreak(), 'day') + ' streak')}
+    ${tile('car', 'car', 'Car', Sheets.connected() ? plural((Sheets.data.fuel || []).length, 'fill-up') : 'Fuel & service')}
+    ${tile('settings', 'sliders', 'Settings', 'Backup, sync, data')}
+  </div>
+  <div class="card" style="margin-top:12px">
+    ${cardHead('sparkle', 'At a glance')}
+    <div class="list">
+      <div class="item"><div class="grow"><div class="t">Projects</div><div class="s">${DB.projects.length} total · ${DB.projects.filter(p => p.status === 'Completed').length} completed</div></div></div>
+      <div class="item"><div class="grow"><div class="t">Transactions</div><div class="s">${DB.transactions.length} recorded</div></div></div>
+      <div class="item"><div class="grow"><div class="t">Notes &amp; entries</div><div class="s">${DB.notes.length} notes · ${DB.journal.length} journal entries</div></div></div>
+    </div>
+  </div>`;
+};
+
+SCREENS.projects = () => {
+  const counts = s => DB.projects.filter(p => s === 'All' || p.status === s).length;
+  const list = DB.projects.filter(p => UI.projFilter === 'All' || p.status === UI.projFilter)
+    .sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'));
+  return seg('projFilter', ['All', ...LISTS.projectStatus].map(s => [s, s, counts(s)])) + (list.length ? list.map(p => {
+    const tasks = DB.tasks.filter(t => t.projectId === p.id), done = tasks.filter(t => t.status === 'Done').length;
+    const n = daysUntil(p.deadline), late = n !== null && n < 0 && p.status !== 'Completed';
+    return `<div class="card tap" data-act="edit" data-type="projects" data-id="${p.id}">
+      <div class="row" style="gap:7px;margin-bottom:10px"><span class="chip ${STATUS_TONE[p.status]}"><span class="dot"></span>${p.status}</span><span class="chip">${esc(p.area)}</span></div>
+      <b style="font-size:16.5px;letter-spacing:-.02em">${esc(p.name)}</b>
+      <p class="hint clamp" style="margin:6px 0 12px">${esc(p.description || 'No description')}</p>
+      <div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">Progress</span><b class="mono">${num(p.progress)}%</b></div>
+      <div class="bar ${p.status === 'Completed' ? 'green' : ''}"><i style="width:${num(p.progress)}%"></i></div>
+      <div class="row" style="gap:14px;margin-top:12px;font-size:12.5px" class="hint">
+        <span class="${late ? 'txt-red' : 'hint'}">${icon('calendar', 13)} ${p.deadline ? relDay(p.deadline) : 'No deadline'}</span>
+        <span class="hint">${icon('tasks', 13)} ${done}/${tasks.length}</span>
+        ${p.link ? `<a class="link-btn" style="margin-left:auto" href="${esc(safeUrl(p.link))}" target="_blank" rel="noopener" data-act="noop">Open ${icon('ext', 13)}</a>` : ''}
+      </div></div>`;
+  }).join('') : `<div class="card">${emptyState('folder', 'No projects', 'Track what you are building.', addBtn('projects', 'New project'))}</div>`);
+};
+
+SCREENS.courses = () => {
+  const counts = s => DB.courses.filter(c => s === 'All' || c.status === s).length;
+  const order = { 'In Progress': 0, 'Not Started': 1, Paused: 2, Completed: 3 };
+  const list = DB.courses.filter(c => UI.courseFilter === 'All' || c.status === UI.courseFilter).sort((a, b) => order[a.status] - order[b.status]);
+  return seg('courseFilter', ['All', ...LISTS.courseStatus].map(s => [s, s, counts(s)])) + (list.length ? list.map(c => {
+    const pct = coursePct(c), done = c.status === 'Completed', n = daysUntil(c.deadline);
+    return `<div class="card">
+      <div class="row" style="gap:7px;margin-bottom:10px" data-act="edit" data-type="courses" data-id="${c.id}">
+        ${c.platform ? `<span class="chip">${esc(c.platform)}</span>` : ''}<span class="chip ${STATUS_TONE[c.status]}"><span class="dot"></span>${c.status}</span></div>
+      <div data-act="edit" data-type="courses" data-id="${c.id}">
+        <b style="font-size:16.5px;letter-spacing:-.02em">${esc(c.name)}</b>
+        ${c.instructor ? `<div class="hint" style="margin-top:3px">with ${esc(c.instructor)}</div>` : ''}
+        <div class="row" style="justify-content:space-between;font-size:12.5px;margin:12px 0 7px"><span class="hint"><b class="mono" style="color:var(--text)">${num(c.lessonsDone)}</b> / ${num(c.lessonsTotal)} lessons</span><b class="mono">${pct}%</b></div>
+        <div class="bar ${done ? 'green' : ''}"><i style="width:${pct}%"></i></div>
+        <div class="hint" style="margin-top:11px">${c.deadline ? (done ? 'Finished ' + fmtDate(c.deadline) : `<span class="${n < 0 ? 'txt-red' : ''}">${relDay(c.deadline)}</span>`) : 'No deadline'}</div>
+      </div>
+      ${!done ? `<button class="btn btn-ghost sm" style="width:100%;margin-top:12px" data-act="lessonPlus" data-id="${c.id}">${icon('check', 15)} Log a lesson</button>` : ''}
+    </div>`;
+  }).join('') : `<div class="card">${emptyState('cap', 'No courses', 'Track what you are learning.', addBtn('courses', 'Add course'))}</div>`);
+};
+
+SCREENS.journal = () => {
+  const entries = [...DB.journal].sort((a, b) => b.date.localeCompare(a.date) || num(b.ts) - num(a.ts));
+  const hasToday = DB.journal.some(j => j.date === today());
+  const recent = DB.journal.filter(j => daysUntil(j.date) >= -30 && j.mood);
+  const avg = recent.length ? sum(recent, j => j.mood) / recent.length : 0;
+  const byDay = {}; DB.journal.forEach(j => { byDay[j.date] = j.mood; });
+  const end = new Date(); end.setHours(0, 0, 0, 0);
+  const start = new Date(end); start.setDate(start.getDate() - (11 * 7 + end.getDay()));
+  let cells = '';
+  for (let i = 0; i < 12 * 7; i++) {
+    const dd = new Date(start); dd.setDate(start.getDate() + i);
+    const ds = toDateStr(dd), mood = byDay[ds];
+    cells += dd > end ? '<i class="future"></i>' : `<i class="${ds === today() ? 'today' : ''}"${mood ? ` style="background:${MOOD_COLORS[mood - 1]}"` : ''} title="${fmtDate(ds)}${mood ? ' · ' + LISTS.moods[mood - 1] : ''}"></i>`;
+  }
+  return `
+  <div class="stat-grid">
+    ${statTile('book', 'Entries', DB.journal.length, `${DB.journal.filter(j => j.date.slice(0, 7) === today().slice(0, 7)).length} this month`)}
+    ${statTile('flame', 'Streak', plural(journalStreak(), 'day'), hasToday ? 'written today' : 'not written today')}
+  </div>
+  ${!hasToday ? `<div class="card" style="border-color:rgba(0,168,255,.3);background:linear-gradient(180deg,rgba(0,102,255,.14),#0D1118)">
+    <div class="row"><div class="grow"><b>Today is empty</b><div class="hint">A few lines is enough.</div></div>${addBtn('journal', 'Write', 'btn-primary sm')}</div></div>` : ''}
+  <div class="card">${cardHead('calendar', 'Mood · 12 weeks', `<span class="hint">${avg ? avg.toFixed(1) + ' / 5' : '—'}</span>`)}
+    <div class="heatmap">${cells}</div>
+    <div class="legend" style="margin-top:10px">${LISTS.moods.map((mm, i) => `<span><i style="background:${MOOD_COLORS[i]}"></i>${mm}</span>`).join('')}</div>
+  </div>
+  ${entries.length ? entries.map(j => `<div class="card tap" data-act="openJournal" data-id="${j.id}">
+    <div class="row" style="gap:12px">${dateBlock(j.date)}
+      <div class="grow"><b style="font-size:15.5px">${esc(j.title || 'Untitled')}</b><div class="hint clamp" style="margin-top:4px">${esc(String(j.content || '').replace(/[*#]/g, ''))}</div></div>
+      ${j.mood ? `<span class="dot" style="background:${MOOD_COLORS[j.mood - 1]};width:10px;height:10px"></span>` : ''}</div>
+  </div>`).join('') : `<div class="card">${emptyState('book', 'No entries yet', 'Reflect on today in a few lines.', addBtn('journal', 'Write first entry'))}</div>`}`;
+};
+
+SCREENS.settings = () => {
+  let bytes = 0; try { bytes = new Blob([localStorage.getItem(STORE_KEY) || '']).size; } catch (e) { /* ignore */ }
+  const total = Object.values(DB).filter(Array.isArray).reduce((s, a) => s + a.length, 0);
+  return `
+  <div class="card">
+    ${cardHead('sliders', 'Preferences')}
+    <div class="form-grid">
+      <div class="field"><label for="setName">Your name</label><input class="input" id="setName" value="${esc(DB.settings.name)}" placeholder="Used in the greeting"></div>
+      <div class="field"><label for="setCur">Currency symbol</label><input class="input" id="setCur" value="${esc(DB.settings.currency)}" maxlength="4"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:14px" data-act="saveSettings">${icon('check', 16)} Save preferences</button>
+  </div>
+
+  <div class="card tap" data-act="sheetsPanel">
+    ${cardHead('sheet', 'Google Sheets')}
+    <div class="sync-state" data-sheets-status><span class="sync-dot"></span><b data-sheets-text>${esc(Sheets.label())}</b></div>
+    <p class="hint" style="margin-top:9px">Car fuel, service and expenses, synced both ways with your sheets.</p>
+  </div>
+
+  <div class="card tap" data-act="syncPanel">
+    ${cardHead('cloud', 'Sync across devices')}
+    <div class="sync-state" data-sync-status><span class="sync-dot"></span><b data-sync-text>${esc(Sync.label())}</b></div>
+    <p class="hint" style="margin-top:9px">${esc(Sync.connected() ? Sync.message : 'Connect a private GitHub gist to share data with the desktop app.')}</p>
+  </div>
+
+  <div class="card">
+    ${cardHead('download', 'Backup')}
+    <p class="hint" style="margin-bottom:12px">${plural(total, 'item')} · ${(bytes / 1024).toFixed(1)} KB in this browser. Clearing browser data erases it.</p>
+    <div class="btn-row">
+      <button class="btn btn-ghost" data-act="exportBackup">${icon('download', 16)} Export JSON</button>
+      <label class="btn btn-ghost">${icon('upload', 16)} Import<input type="file" id="impJson" accept=".json,application/json" hidden></label>
+    </div>
+    <div class="section-title" style="margin-left:0">Export for Excel</div>
+    <div class="btn-row">${Object.keys(EXPORTS).map(k => `<button class="btn btn-ghost sm" data-act="exportCSV" data-val="${k}">${k}</button>`).join('')}</div>
+  </div>
+
+  <div class="card">
+    ${cardHead('sparkle', 'Data')}
+    <div class="btn-row">
+      <button class="btn btn-ghost" data-act="loadDemo">${icon('sparkle', 16)} Load demo data</button>
+      <button class="btn btn-danger" data-act="eraseAll">${icon('trash', 16)} Erase all</button>
+    </div>
+  </div>
+  <p class="hint" style="text-align:center;padding:6px 20px 0">Second Brain · mobile edition. Same data model as Second Brain.html and Second Brain.xlsx.</p>`;
+};
+
+
+/* =========================================================
+   CAR MAINTENANCE — Fuel and Service, live from the Google Sheet
+   ========================================================= */
+const aedc = n => 'AED ' + (Math.round(num(n) * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const sheetOffCard = what => `<div class="card">${emptyState('sheet', 'Sheets not connected',
+  `Connect your Google Sheet and ${what} appears here.`,
+  `<button class="btn btn-primary" data-act="sheetsPanel">${icon('cloud', 16)} Connect</button>`)}</div>`;
+
+SCREENS.car = () => {
+  const head = `${seg('carTab', [['fuel', 'Fuel'], ['service', 'Service']])}
+    <div class="card tap" data-act="sheetsPanel" style="padding:12px">
+      <div class="sync-state" data-sheets-status style="border:0;background:none;padding:0">
+        <span class="sync-dot"></span><b data-sheets-text>${esc(Sheets.label())}</b>
+        <button class="btn btn-ghost sm" style="margin-left:auto" data-act="sheetSync">${icon('sparkle', 14)} Sync</button>
+      </div>
+    </div>`;
+  if (!Sheets.connected()) return head + sheetOffCard(UI.carTab === 'fuel' ? 'every fill-up' : 'your service history');
+  return head + (UI.carTab === 'fuel' ? mobileFuel() : mobileService());
+};
+
+function mobileFuel() {
+  const rows = fuelWithDeltasM();
+  const st = fuelStats();
+  if (!rows.length) return `<div class="card">${emptyState('droplet', 'No fill-ups yet', 'Tap + to log one.', `<button class="btn btn-primary" data-act="sheetAdd" data-kind="fuel">${icon('plus', 16)} Log fill-up</button>`)}</div>`;
+  return `
+  <div class="stat-grid">
+    ${statTile('wallet', 'Total on fuel', aedc(st.total), plural(st.fills, 'fill-up'))}
+    ${statTile('gauge', 'Distance', st.km.toLocaleString() + ' km', st.last ? 'Odo ' + st.last.odometer.toLocaleString() : '')}
+    ${statTile('trend', 'Cost per km', st.perKm ? aedc(st.perKm) : '—', 'whole log')}
+    ${statTile('droplet', 'Average fill', aedc(st.avgFill), st.avgDays ? `every ${st.avgDays.toFixed(1)} days` : '')}
+  </div>
+  <div class="card">${cardHead('sheet', 'Fuel log', `<span class="hint">${plural(rows.length, 'row')}</span>`)}
+    <div class="list">${rows.map(r => `<div class="item" data-act="sheetEdit" data-kind="fuel" data-id="${esc(r.id)}">
+      ${r.date ? dateBlock(r.date) : ''}
+      <div class="grow"><div class="t">${aedc(r.cost)}${r.pending ? ' <span class="chip amber">saving</span>' : ''}</div>
+        <div class="s">${r.odometer ? r.odometer.toLocaleString() + ' km' : '—'}${r.km ? ' · +' + r.km.toLocaleString() + ' km' : ''}${r.days ? ' · ' + r.days + 'd' : ''}</div></div>
+    </div>`).join('')}</div>
+  </div>
+  <div class="btn-row"><button class="btn btn-primary" data-act="sheetAdd" data-kind="fuel">${icon('plus', 16)} Log fill-up</button></div>`;
+}
+
+function mobileService() {
+  const rows = serviceRows();
+  const total = sum(rows, r => r.cost);
+  const last = rows[0];
+  const lastOdo = Math.max(0, ...(Sheets.data.fuel || []).map(f => f.odometer));
+  const since = last && last.odometer ? lastOdo - last.odometer : 0;
+  if (!rows.length) return `<div class="card">${emptyState('wrench', 'No service records', 'Tap + to add one.', `<button class="btn btn-primary" data-act="sheetAdd" data-kind="service">${icon('plus', 16)} Log service</button>`)}</div>`;
+  return `
+  <div class="stat-grid">
+    ${statTile('wallet', 'Total on service', aedc(total), plural(rows.length, 'record'))}
+    ${statTile('gauge', 'Since last service', since > 0 ? since.toLocaleString() + ' km' : '—', last ? fmtDate(last.date) : '')}
+  </div>
+  <div class="card">${cardHead('wrench', 'Service history')}
+    <div class="list">${rows.map(r => `<div class="item" data-act="sheetEdit" data-kind="service" data-id="${esc(r.id)}">
+      ${r.date ? dateBlock(r.date) : ''}
+      <div class="grow"><div class="t">${esc(r.item)}${r.pending ? ' <span class="chip amber">saving</span>' : ''}</div>
+        <div class="s">${r.odometer ? r.odometer.toLocaleString() + ' km' : 'No odometer'}</div></div>
+      <span class="amt">${aedc(r.cost)}</span>
+    </div>`).join('')}</div>
+  </div>
+  <div class="btn-row"><button class="btn btn-primary" data-act="sheetAdd" data-kind="service">${icon('plus', 16)} Log service</button></div>`;
+}
+
+function fuelWithDeltasM() {
+  const rows = [...(Sheets.data.fuel || [])];
+  const byOdo = [...rows].filter(r => r.odometer > 0).sort((a, b) => a.odometer - b.odometer);
+  const prev = new Map();
+  byOdo.forEach((r, i) => { if (i) prev.set(r.id, byOdo[i - 1]); });
+  return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.odometer - a.odometer).map(r => {
+    const p = prev.get(r.id);
+    const km = p ? r.odometer - p.odometer : 0;
+    const days = p && p.date && r.date ? Math.round((parseDate(r.date) - parseDate(p.date)) / 86400000) : 0;
+    return { ...r, km, days };
+  });
+}
+
+/* =========================================================
+   ACTIONS + WIRING
+   ========================================================= */
+function go(view) {
+  UI.view = view;
+  try { localStorage.setItem('secondBrain.mview', view); } catch (e) { /* ignore */ }
+  render();
+  window.scrollTo({ top: 0, behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' });
+}
+function renderNav() {
+  const open = DB.tasks.filter(t => t.status !== 'Done').length;
+  $('#nav').innerHTML = NAV.map(n => {
+    const on = UI.view === n.k || (n.k === 'more' && SUBVIEWS.includes(UI.view));
+    return `<button data-view="${n.k}" class="${on ? 'on' : ''}" aria-label="${n.l}">${icon(n.ic, 21)}<span>${n.l}</span>${n.k === 'tasks' && open ? `<span class="badge">${open > 99 ? '99+' : open}</span>` : ''}</button>`;
+  }).join('');
+}
+function render() {
+  $('#pageTitle').textContent = TITLES[UI.view] || 'Second Brain';
+  document.title = (TITLES[UI.view] || 'Second Brain') + ' · Second Brain';
+  document.body.classList.toggle('sub', SUBVIEWS.includes(UI.view));
+  $('#view').innerHTML = (SCREENS[UI.view] || SCREENS.home)();
+  $('#fab').hidden = !addType();
+  renderNav();
+  Sync.paint();
+}
+
+const ACTIONS = {
+  noop() {},
+  go: el => go(el.dataset.val),
+  add: el => openForm(el.dataset.type, null, el.dataset.preset ? JSON.parse(el.dataset.preset) : {}),
+  edit: el => { const it = find(el.dataset.type, el.dataset.id); if (it) openForm(el.dataset.type, it); },
+  del: el => removeItem(el.dataset.type, el.dataset.id),
+  set: el => { UI[el.dataset.key] = el.dataset.val; render(); },
+  month: el => { UI.finMonth = shiftMonth(UI.finMonth, Number(el.dataset.val)); render(); },
+  syncPanel: () => Sync.openPanel(),
+  sheetsPanel: () => Sheets.openPanel(),
+  sheetSync: () => Sheets.sync('manual'),
+  sheetAdd: el => openSheetForm(el.dataset.kind),
+  sheetEdit: el => {
+    const kind = el.dataset.kind;
+    const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
+    const item = (Sheets.data[bucket] || []).find(x => String(x.id) === el.dataset.id);
+    if (item) openSheetForm(kind, item);
+  },
+  exportCSV: el => exportCSV(el.dataset.val),
+  toggleTask: el => {
+    const t = find('tasks', el.dataset.id); if (!t) return;
+    const done = t.status !== 'Done';
+    t.status = done ? 'Done' : 'To Do';
+    t.completed = done ? today() : '';
+    t.updated = today(); t.ts = Date.now();
+    el.classList.toggle('on', done);
+    el.closest('.item')?.classList.toggle('done', done);
+    saveDB();
+    setTimeout(render, 360);
+    if (done) toast('Task completed', { action: 'Undo', onAction: () => { t.status = 'To Do'; t.completed = ''; t.ts = Date.now(); saveDB(); render(); } });
+  },
+  capture: () => {
+    const input = $('#captureInput'); if (!input) return;
+    const text = input.value.trim(); if (!text) { input.focus(); return; }
+    if (UI.captureType === 'task') {
+      DB.tasks.unshift({ id: uid(), created: today(), updated: today(), ts: Date.now(), title: text, priority: 'Medium', due: today(), status: 'To Do', projectId: '', notes: '', completed: '' });
+      saveDB(); render(); toast('Task added for today');
+    } else if (UI.captureType === 'note') {
+      DB.notes.unshift({ id: uid(), created: today(), updated: today(), ts: Date.now(), title: text.length > 60 ? text.slice(0, 57) + '…' : text, content: text.length > 60 ? text : '', category: 'Ideas', tags: [], pinned: false });
+      saveDB(); render(); toast('Note captured');
+    } else {
+      input.value = '';
+      openForm('journal', null, { content: text });
+    }
+  },
+  pinNote: el => { const n = find('notes', el.dataset.id); if (!n) return; n.pinned = !n.pinned; n.ts = Date.now(); saveDB(); render(); toast(n.pinned ? 'Pinned' : 'Unpinned'); },
+  lessonPlus: el => {
+    const c = find('courses', el.dataset.id); if (!c) return;
+    const total = num(c.lessonsTotal);
+    c.lessonsDone = total ? Math.min(total, num(c.lessonsDone) + 1) : num(c.lessonsDone) + 1;
+    if (c.status === 'Not Started' || c.status === 'Paused') c.status = 'In Progress';
+    const finished = total && c.lessonsDone >= total;
+    if (finished) c.status = 'Completed';
+    c.updated = today(); c.ts = Date.now();
+    saveDB(); render();
+    toast(finished ? 'Course completed — well done!' : `Lesson logged · ${c.lessonsDone}/${total || '?'}`);
+  },
+  addFunds: el => {
+    const g = find('goals', el.dataset.id); if (!g) return;
+    const m = openModal(`
+      <div class="modal-head"><div><div class="eyebrow">Add funds</div><h3>${esc(g.name)}</h3></div><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+      <div class="modal-body"><div class="field"><label for="fundAmt">Amount</label><input class="input" id="fundAmt" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
+        <p class="hint" style="margin-top:10px">${money(num(g.saved))} of ${money(num(g.target))} saved.</p></div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('plus', 16)} Add</button></div>`);
+    const inp = $('#fundAmt', m);
+    $('[data-ok]', m).onclick = () => {
+      const v = Number(inp.value);
+      if (!(v > 0)) { inp.closest('.field').classList.add('invalid'); return; }
+      g.saved = Math.round((num(g.saved) + v) * 100) / 100; g.updated = today(); g.ts = Date.now();
+      saveDB(); closeModal(); render();
+      toast(goalPct(g) >= 100 ? `Goal reached: ${g.name}` : `Added ${money(v)}`);
+    };
+  },
+  openJournal: el => {
+    const j = find('journal', el.dataset.id); if (!j) return;
+    openModal(`
+      <div class="modal-head">
+        <div><div class="eyebrow">${fmtDate(j.date, { weekday: 'long', month: 'long', day: 'numeric' })}</div><h3>${esc(j.title || 'Untitled')}</h3></div>
+        <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button>
+      </div>
+      <div class="modal-body">
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:14px">${moodChip(j.mood)}<span class="hint">${wordCount(j.content)} words</span>${(j.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+        <div class="prose">${richText(j.content)}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" data-jdel>${icon('trash', 16)}</button>
+        <button class="btn btn-primary" data-jedit>${icon('edit', 16)} Edit entry</button>
+      </div>`);
+    $('[data-jedit]').onclick = () => { closeModal(); setTimeout(() => openForm('journal', j), 180); };
+    $('[data-jdel]').onclick = () => { closeModal(); removeItem('journal', j.id); };
+  },
+  saveSettings: () => {
+    DB.settings.name = $('#setName').value.trim();
+    DB.settings.currency = $('#setCur').value.trim() || '$';
+    DB.settings.ts = Date.now();
+    saveDB(); render(); toast('Preferences saved');
+  },
+  exportBackup: () => {
+    download(`second-brain-backup-${today()}.json`, JSON.stringify({ app: 'Second Brain', exported: new Date().toISOString(), ...DB }, null, 2), 'application/json');
+    toast('Backup downloaded');
+  },
+  loadDemo: () => confirmSheet('Load demo data?', 'Your current data on this device will be replaced with the sample set.', 'Load demo data', () => {
+    const keep = DB.settings; DB = seedDB(); DB.settings = keep; saveDB(); render(); toast('Demo data loaded');
+  }),
+  eraseAll: () => confirmSheet('Erase everything?', 'Every project, task, transaction, journal entry, course and note is removed from this device. This cannot be undone.', 'Erase all data', () => {
+    const keep = DB.settings; DB = emptyDB(); DB.settings = keep; saveDB(); render(); toast('All data erased');
+  })
+};
+
+function confirmSheet(title, text, okLabel, onOk) {
+  const m = openModal(`
+    <div class="modal-head"><h3>${esc(title)}</h3><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-body"><p class="hint">${esc(text)}</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-danger" data-ok>${esc(okLabel)}</button></div>`);
+  $('[data-ok]', m).onclick = () => { closeModal(); onOk(); };
+}
+
+/* ---------- global search ---------- */
+let searchHits = [];
+const snippet = (text, q) => {
+  const s = String(text || '').replace(/[*#`]/g, '').replace(/\s+/g, ' ');
+  const i = s.toLowerCase().indexOf(q);
+  if (i < 0) return s.slice(0, 70);
+  return (i > 24 ? '…' : '') + s.slice(Math.max(0, i - 24), i + q.length + 40);
+};
+function searchAll(raw) {
+  const q = raw.toLowerCase().trim(); if (!q) return [];
+  const hit = (...f) => f.some(v => (Array.isArray(v) ? v.join(' ') : String(v ?? '')).toLowerCase().includes(q));
+  const res = [];
+  DB.tasks.forEach(t => hit(t.title, t.notes) && res.push({ type: 'tasks', id: t.id, title: t.title, meta: `${t.status}${t.due ? ' · ' + fmtDate(t.due) : ''}` }));
+  DB.projects.forEach(p => hit(p.name, p.description, p.area) && res.push({ type: 'projects', id: p.id, title: p.name, meta: `${p.status} · ${p.area}` }));
+  DB.notes.forEach(n => hit(n.title, n.content, n.tags, n.category) && res.push({ type: 'notes', id: n.id, title: n.title, meta: snippet(n.content, q) }));
+  DB.journal.forEach(j => hit(j.title, j.content, j.tags) && res.push({ type: 'journal', id: j.id, title: j.title || fmtDate(j.date), meta: fmtDate(j.date) + ' · ' + snippet(j.content, q) }));
+  DB.courses.forEach(c => hit(c.name, c.platform, c.instructor, c.notes) && res.push({ type: 'courses', id: c.id, title: c.name, meta: `${c.status} · ${coursePct(c)}%` }));
+  DB.goals.forEach(g => hit(g.name) && res.push({ type: 'goals', id: g.id, title: g.name, meta: `${money(num(g.saved))} of ${money(num(g.target))}` }));
+  DB.transactions.forEach(x => hit(x.description, x.category) && res.push({ type: 'transactions', id: x.id, title: x.description, meta: `${x.type} · ${money(num(x.amount), 2)} · ${fmtDate(x.date)}` }));
+  return res.slice(0, 40);
+}
+function renderSearch() {
+  const q = $('#searchInput').value, box = $('#searchResults');
+  searchHits = searchAll(q);
+  if (!q.trim()) { box.innerHTML = `<p class="hint" style="padding:18px 4px">Search tasks, projects, notes, journal entries, courses, goals and transactions.</p>`; return; }
+  let html = '', group = '';
+  searchHits.forEach((r, i) => {
+    if (r.type !== group) { group = r.type; html += `<div class="sr-group">${TYPE_META[r.type].label}</div>`; }
+    html += `<button class="sr-item" data-i="${i}"><span class="sr-ico">${icon(TYPE_META[r.type].icon, 17)}</span><div><div class="sr-title">${highlight(r.title, q.trim())}</div><div class="sr-meta">${esc(r.meta)}</div></div></button>`;
+  });
+  box.innerHTML = html || `<div class="empty"><div class="e-ico">${icon('search', 22)}</div><h4>No results</h4><p>Nothing matches “${esc(q)}”.</p></div>`;
+}
+function openSearch(open) {
+  $('#searchWrap').classList.toggle('open', open);
+  if (open) { $('#searchInput').value = ''; renderSearch(); setTimeout(() => $('#searchInput').focus(), 80); }
+}
+function openHit(r) {
+  if (!r) return;
+  openSearch(false);
+  const view = { tasks: 'tasks', projects: 'projects', notes: 'notes', journal: 'journal', courses: 'courses', goals: 'money', transactions: 'money' }[r.type];
+  if (r.type === 'goals') UI.moneyTab = 'goals';
+  if (r.type === 'transactions') { UI.moneyTab = 'activity'; const x = find('transactions', r.id); if (x) UI.finMonth = x.date.slice(0, 7); }
+  go(view);
+  const it = find(r.type, r.id);
+  if (!it) return;
+  if (r.type === 'journal') ACTIONS.openJournal({ dataset: { id: r.id } });
+  else openForm(r.type, it);
+}
+
+/* ---------- boot ---------- */
+(function boot() {
+  DB = loadDB();
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { toast('Browser storage is blocked — changes will not be saved', { tone: 'error' }); }
+  try { const v = localStorage.getItem('secondBrain.mview'); if (TITLES[v]) UI.view = v; } catch (e) { /* ignore */ }
+  document.querySelectorAll('svg[data-icon]').forEach(s => { s.outerHTML = icon(s.dataset.icon, +(s.dataset.size || 18)); });
+
+  // Sheets should not force the keyboard open on a phone
+  const _openForm = openForm;
+  openForm = function (...args) {
+    _openForm(...args);
+    setTimeout(() => { const el = document.activeElement; if (el && el.closest && el.closest('.modal')) el.blur(); }, 90);
+  };
+
+  $('#view').addEventListener('click', e => {
+    const el = e.target.closest('[data-act]');
+    if (!el || el.tagName === 'A') return;
+    e.preventDefault();
+    ACTIONS[el.dataset.act]?.(el, e);
+  });
+  $('#view').addEventListener('input', e => {
+    if (e.target.dataset.bind) {
+      UI[e.target.dataset.bind] = e.target.value;
+      const pos = e.target.selectionStart;
+      render();
+      const again = document.querySelector(`[data-bind="${e.target.dataset.bind}"]`);
+      if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (err) { /* search input */ } }
+    }
+  });
+  $('#view').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'captureInput') { e.preventDefault(); ACTIONS.capture(); } });
+  $('#view').addEventListener('change', e => { if (e.target.id === 'impJson') importBackup(e.target.files[0]); });
+
+  $('#nav').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) go(b.dataset.view); });
+  $('#fab').addEventListener('click', () => {
+    if (UI.view === 'car') { openSheetForm(UI.carTab === 'fuel' ? 'fuel' : 'service'); return; }
+    if (UI.view === 'money' && UI.moneyTab === 'sheet') { openSheetForm('expense'); return; }
+    const t = addType();
+    if (t) openForm(t);
+  });
+  $('#backBtn').addEventListener('click', () => go('more'));
+  $('#syncBtn').addEventListener('click', () => Sync.openPanel());
+  $('#searchBtn').addEventListener('click', () => openSearch(true));
+  $('#searchClose').addEventListener('click', () => openSearch(false));
+  $('#searchInput').addEventListener('input', renderSearch);
+  $('#searchResults').addEventListener('click', e => { const b = e.target.closest('.sr-item'); if (b) openHit(searchHits[+b.dataset.i]); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if ($('.overlay:not(.closing)')) closeModal();
+    else if ($('#searchWrap').classList.contains('open')) openSearch(false);
+  });
+
+  render();
+  Sync.init();
+  Sheets.init();
+  let lastDay = today();
+  setInterval(() => { if (today() !== lastDay) { lastDay = today(); if (!$('.overlay')) render(); } }, 60000);
+})();
+
+function importBackup(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (typeof data !== 'object' || !['projects', 'tasks', 'notes'].some(k => Array.isArray(data[k]))) throw new Error('bad file');
+      confirmSheet('Replace data on this device?', `Everything here will be replaced with ${file.name}.`, 'Import & replace', () => {
+        DB = normalizeDB(data); delete DB.app; delete DB.exported;
+        saveDB(); render(); toast('Backup imported');
+      });
+    } catch (e) { toast('That file is not a valid Second Brain backup', { tone: 'error' }); }
+  };
+  reader.readAsText(file);
+}
+
+</script>
+</body>
+</html>
