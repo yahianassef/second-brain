@@ -77,9 +77,11 @@ then paste that code — no retyping.
 
 **How expenses map to tabs**
 
-- Reading: **every tab** that has a name column (`Expense Name`, `Item`, `Description`…) and an
-  amount column (`Amount in AED`, `Amount in EGP`, `Amount`, `Cost`…). Tabs without such a table,
-  like a Summary tab, are ignored. A tab's month comes from its name — `UAE Finances November`,
+- Reading: **every tab** with a name column (`Expense Name`, `Payments`, `Item`, `Description`…).
+  The amount and date columns are found by **what they contain**, not by their headers — real
+  sheets leave those headers blank, and a labelled-but-empty `Amount in AED` column loses to the
+  column that actually holds the numbers. Currency is read from how the amounts are *displayed*
+  (`AED15.00`, `EGP 250.00`), since the cells are formatted numbers. A tab's month comes from its name — `UAE Finances November`,
   `Nov 2025` and `2025-11` all work — and tabs named by month alone get their year by counting
   forward from the first tab, so a January after a December belongs to the next year.
 - A row with no date inherits the first of its tab's month, so undated history still charts.
@@ -94,7 +96,13 @@ then paste that code — no retyping.
   total row and anything marked in a `Paid`/`Status` column. They are kept out of expense totals on
   purpose — the payment you copy into a month tab is what counts as the expense, so counting the
   charges too would double up. Name them explicitly with `CONFIG.CARD_TABS` if the guess is wrong,
-  or exclude a tab entirely with `CONFIG.IGNORE_TABS`.
+  or exclude a tab entirely with `CONFIG.IGNORE_TABS`. Both accept globs, so `IGNORE_TABS: '*egypt*'`
+  drops every Egypt tab, and naming your cards in `CARD_TABS` also keeps scratch tabs (Draft,
+  Calculations, Wishlist…) out of the app entirely.
+- A card's debt is the sum of its unpaid charges; a `Payment Status` of `Paid` takes a row out of
+  the total while leaving it listed.
+- `apps-script/test-layouts.html` runs the reader against mock sheets shaped like real ones — open
+  it next to a checkout to check a layout change without touching your data.
 - Income stays in the app, since these sheets hold expenses only. It syncs between devices through
   the hidden `SecondBrain_Data` tab and appears in the app's totals alongside sheet expenses.
 

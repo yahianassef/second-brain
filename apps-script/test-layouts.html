@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Code.gs — real sheet layout</title>
+<body style="font:13px/1.6 monospace;background:#0B0F16;color:#E6EAF2;padding:16px">
+<pre id="out">running…</pre>
+<script>
+/* Mock of the Sheets API shaped like the real workbook: amounts are formatted
+   NUMBERS (so only the display text reveals the currency) and most headers are blank. */
+function ensure(sh, r, c) {
+  while (sh._g.length < r) sh._g.push([]);
+  const row = sh._g[r - 1];
+  while (row.length < c) row.push('');
+  return row;
+}
+function display(sh, v, col) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (v instanceof Date) return v.toDateString();
+  if (typeof v === 'number' && sh._money && sh._money.indexOf(col) !== -1) {
+    return (sh._cur || 'AED') + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return String(v);
+}
+function makeRange(sh, r, c, nr, nc) {
+  return {
+    getValues() {
+      const out = [];
+      for (let i = 0; i < nr; i++) {
+        const row = [];
+        for (let j = 0; j < nc; j++) { const rr = sh._g[r - 1 + i] || []; row.push(rr[c - 1 + j] ?? ''); }
+        out.push(row);
+      }
+      return out;
+    },
+    getDisplayValues() {
+      return this.getValues().map((row, i) => row.map((v, j) => display(sh, v, c - 1 + j)));
+    },
+    setValue(v) { ensure(sh, r, c)[c - 1] = v; return this; },
+    setValues(vals) { vals.forEach((rv, i) => rv.forEach((v, j) => { ensure(sh, r + i, c + j)[c + j - 1] = v; })); return this; },
+    clearContent() { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) { const rr = sh._g[r - 1 + i]; if (rr) rr[c - 1 + j] = ''; } return this; }
+  };
+}
+function makeSheet(name, grid, opts = {}) {
+  const sh = {
+    _name: name, _g: grid.map(r => r.slice()), _cur: opts.cur || 'AED', _money: opts.money || [1],
+    getName: () => sh._name,
+    setName: n => { sh._name = n; return sh; },
+    getDataRange: () => makeRange(sh, 1, 1, Math.max(sh._g.length, 1), Math.max(1, ...sh._g.map(r => r.length))),
+    getRange: (r, c, nr = 1, nc = 1) => makeRange(sh, r, c, nr, nc),
+    getLastRow: () => sh._g.length,
+    getLastColumn: () => Math.max(1, ...sh._g.map(r => r.length)),
+    hideSheet: () => sh,
+    copyTo: ss => { const copy = makeSheet('Copy of ' + sh._name, sh._g.map(r => r.slice()), { cur: sh._cur, money: sh._money }); ss._sheets.push(copy); return copy; }
+  };
+  return sh;
+}
+function makeSS(name, sheets) {
+  const ss = {
+    _name: name, _sheets: sheets, _active: null,
+    getName: () => ss._name,
+    getSheets: () => ss._sheets.slice(),
+    getSheetByName: n => ss._sheets.find(s => s.getName() === n) || null,
+    insertSheet: n => { const s = makeSheet(n, [[]]); ss._sheets.push(s); return s; },
+    setActiveSheet: s => { ss._active = s; return s; },
+    moveActiveSheet: pos => { const s = ss._active; ss._sheets = ss._sheets.filter(x => x !== s); ss._sheets.splice(pos - 1, 0, s); },
+    getNumSheets: () => ss._sheets.length
+  };
+  return ss;
+}
+
+const D = (y, m, d) => new Date(y, m - 1, d);
+
+/* ---- month tabs: header row has BLANK cells above amount and date ---- */
+const monthHead = ['Expense Name', '', 'Category', 'Payment Method', '', '', 'Paid In Cash', 0];
+const sep26 = makeSheet('UAE Finances - September 2026', [monthHead,
+  ['Credit Card Payment - ADCB', 2066, 'Installements', 'ADCB', D(2026, 9, 1), '', 'Paid with Arab Bank', 0],
+  ['Rent', 3800, 'MBZ Home', 'ADCB', D(2026, 9, 1), '', 'Paid with ADCB', 9277.5],
+  ['Pizza w / Rana', 50, 'Food', 'ADCB', D(2026, 9, 2), '', 'Sum', 9277.5]
+]);
+const aug26 = makeSheet('UAE Finances - August 2026', [monthHead,
+  ['Rent', 3800, 'MBZ Home', 'ADCB', D(2026, 8, 1)]
+]);
+// the one older tab that does label its amount column
+const nov25 = makeSheet('UAE Finances -November 2025',
+  [['Expense Name', 'Amount in AED', 'Category', 'Payment Method', 'Date'],
+   ['Rent', 3500, 'Housing', 'ADCB', D(2025, 11, 1)]]);
+
+/* ---- card tabs: name header is "Payments", amount header blank ---- */
+const cardHead = ['Payments', '', 'Transaction Status', '', 'Payment Status', 'Payment Date', 'Notes', '', 'Current Credit Available', 3368];
+const touch = makeSheet('ADCB Touchpoints Credit Card', [cardHead,
+  ['Car Wash', 15, 'Debt', D(2026, 9, 10), '', '', '', '', '', ''],
+  ['Wingstop', 80, 'Debt', D(2026, 9, 10), '', '', '', '', '', ''],
+  ['Lulu', 220, 'Debt', D(2026, 9, 10), '', '', '', '', '', '']
+]);
+const islamic = makeSheet('ADCB 365 Islamic Credit Card', [cardHead,
+  ['Credit Card Loan - Payment 1', 750, 'Debt', D(2026, 6, 9), 'Paid', D(2026, 7, 6), '', '', '', ''],
+  ['Credit Card Loan - Payment 2', 750, 'Debt', D(2026, 6, 9), 'Paid', D(2026, 7, 12), '', '', '', ''],
+  ['Credit Card Loan - Payment 3', 750, 'Debt', D(2026, 6, 9), '', '', '', '', '', ''],
+  ['Credit Card Loan - Payment 4', 750, 'Debt', D(2026, 6, 9), '', '', '', '', '', '']
+]);
+// labelled "Amount in AED" column that is EMPTY; the real amounts sit in B and are EGP
+const hsbc = makeSheet('HSBC Credit Card', [['Payments', '', 'Amount in AED', '', 'Notes'],
+  ['Google One', 250, '', 28410, ''],
+  ['Youtube', 160, '', 28410, ''],
+  ['Claude AI', 1000, '', 28410, '']
+], { cur: 'EGP' });
+const tabby = makeSheet('Tabby', [['Payments', 'Amount in AED', 'Transaction Status', 'Debit Date', 'Payment Status', 'Credit Date', 'Notes', '', 'Current Credit Available', 4900]]);
+const dib = makeSheet('DIB Credit Card', [['Payments', 'Amount in AED', 'Transaction Status', 'Transaction Date', 'Payment Status', 'Payment Date', 'Notes', '', 'Current Credit Available', 5000], []]);
+
+/* ---- tabs that must stay out ---- */
+const egypt = makeSheet('Egypt Finances', [monthHead, ['Transfer Mama', 1000, 'Essentials', 'HSBC', D(2026, 8, 4)]], { cur: 'EGP' });
+const egyptOld = makeSheet('Egypt Finances - Old', [monthHead, ['Old thing', 500, 'Essentials', 'HSBC', D(2025, 8, 4)]], { cur: 'EGP' });
+const egyptCopy = makeSheet('Copy of Egypt Finances', [monthHead, ['Copy thing', 500, 'Essentials', 'HSBC', D(2025, 8, 4)]], { cur: 'EGP' });
+const calculations = makeSheet('Calculations', [['Expense Name', '', 'Category'], ['Scratch maths', 999, 'x']]);
+const wishlist = makeSheet('Wishlist', [['Item', '', 'Notes'], ['New phone', 4000, '']]);
+const draft = makeSheet('Draft', [['Expense Name', '', 'Category'], ['Draft row', 123, 'y']]);
+const financesSheet = makeSheet('Finances Sheet', [['Expense Name', '', 'Category'], ['Legacy row', 77, 'z']]);
+const brain = makeSheet('SecondBrain_Data', [['Second Brain app data']]);
+
+const car = makeSheet('Hyundai Elantra', [
+  ['Odometer Reading', 'Date', 'Cost'], [229000, D(2026, 9, 1), 120], [],
+  ['Item', 'Cost', 'Date', 'Odometer Reading'], ['Oil change', 300, D(2026, 8, 20), 228500]
+]);
+
+const expensesSS = makeSS('Expenses Sheet Starting November 2025',
+  [nov25, brain, aug26, sep26, islamic, touch, tabby, dib, hsbc, calculations, wishlist,
+   egyptOld, egypt, draft, egyptCopy, financesSheet]);
+const carSS = makeSS('Hyundai Elantra', [car]);
+
+const SpreadsheetApp = { openById: id => (id === 'car' ? carSS : expensesSS) };
+const Session = { getScriptTimeZone: () => 'UTC' };
+const Utilities = { formatDate: date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` };
+const DriveApp = { getFileById: () => ({ getLastUpdated: () => new Date() }) };
+const ContentService = { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType() { return this; } }) };
+
+const R = [];
+const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> ' + x : ''));
+
+(async () => {
+  const src = await (await fetch('Code.gs?t=' + Date.now(), { cache: 'no-store' })).text();
+  const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService',
+    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName };')
+    (SpreadsheetApp, Session, Utilities, DriveApp, ContentService);
+  api.CONFIG.SECRET = '';
+  api.CONFIG.CAR_SHEET_ID = 'car';
+  api.CONFIG.EXPENSES_SHEET_ID = 'exp';
+  api.CONFIG.EXPENSES_TAB = '';
+  api.CONFIG.CARD_TABS = 'ADCB 365 Islamic Credit Card, ADCB Touchpoints Credit Card, Tabby, DIB Credit Card, HSBC Credit Card';
+  api.CONFIG.IGNORE_TABS = '*egypt*';
+
+  const scan = api.scanTabs();
+  const months = scan.months.map(t => t.name);
+  const cards = scan.cards.map(t => t.name);
+
+  ok('month tabs found (blank headers and all)', months.length === 3, months.join(' | '));
+  ok('months dated from their names', scan.months.map(t => t.month).sort().join(',') === '2025-11,2026-08,2026-09',
+     scan.months.map(t => t.name + '=' + t.month).join(', '));
+  ok('all five card tabs found', cards.length === 5, cards.join(' | '));
+  ok('Egypt excluded everywhere', !months.some(n => /egypt/i.test(n)) && !cards.some(n => /egypt/i.test(n)),
+     'skipped: ' + scan.skipped.join(', '));
+  ok('Calculations / Wishlist / Draft / Finances Sheet stay out',
+     !['Calculations', 'Wishlist', 'Draft', 'Finances Sheet'].some(n => months.includes(n) || cards.includes(n)));
+
+  const exp = api.readExpenses();
+  const sep = exp.filter(r => r.tab === 'UAE Finances - September 2026');
+  ok('September rows read', sep.length === 3, sep.map(r => r.name).join(', '));
+  ok('amount read from the unlabelled column', sep.find(r => r.name === 'Rent').amount === 3800,
+     String(sep.find(r => r.name === 'Rent').amount));
+  ok('date read from the unlabelled column', sep.find(r => r.name === 'Rent').date === '2026-09-01',
+     sep.find(r => r.name === 'Rent').date);
+  ok('category and payment method read', sep[1].category === 'MBZ Home' && sep[1].method === 'ADCB');
+  ok('summary block ignored', !exp.some(r => /paid with|^sum$/i.test(r.name)));
+  ok('month tabs read as AED', scan.months.every(t => t.currency === 'AED'));
+  ok('the old labelled tab still works', exp.some(r => r.tab === 'UAE Finances -November 2025' && r.amount === 3500));
+
+  const cardData = api.readCards();
+  const byName = n => cardData.find(c => c.name === n);
+  ok('Touchpoints debt is the sum of its charges', byName('ADCB Touchpoints Credit Card').debt === 315,
+     String(byName('ADCB Touchpoints Credit Card').debt));
+  ok('paid instalments excluded from the debt', byName('ADCB 365 Islamic Credit Card').debt === 1500,
+     byName('ADCB 365 Islamic Credit Card').debt + ' of 4x750, 2 marked Paid');
+  ok('paid rows still listed', byName('ADCB 365 Islamic Credit Card').charges === 4 && byName('ADCB 365 Islamic Credit Card').unpaid === 2);
+  ok('HSBC reads EGP, not the empty AED column', byName('HSBC Credit Card').currency === 'EGP' && byName('HSBC Credit Card').debt === 1410,
+     byName('HSBC Credit Card').currency + ' ' + byName('HSBC Credit Card').debt);
+  ok('empty cards still appear', byName('Tabby').debt === 0 && byName('DIB Credit Card').debt === 0);
+  ok('card charges never enter the expense history', !exp.some(r => /Credit Card$|Tabby/.test(r.tab)));
+  ok('card dates parsed', byName('ADCB Touchpoints Credit Card').lastDate === '2026-09-10', byName('ADCB Touchpoints Credit Card').lastDate);
+
+  // writing
+  api.invalidateTabs();
+  const added = api.addExpense({ name: 'Test coffee', amount: 18, category: 'Food', method: 'ADCB', date: '2026-09-15', currency: 'AED' });
+  ok('expense written to this month’s tab', added.tab === 'UAE Finances - September 2026', added.tab);
+  const written = sep26._g.find(r => r[0] === 'Test coffee');
+  ok('written into the right columns', written && written[1] === 18 && written[2] === 'Food' && written[3] === 'ADCB' && written[4] instanceof Date,
+     JSON.stringify(written && written.slice(0, 5).map(String)));
+
+  api.invalidateTabs();
+  const oct = api.addExpense({ name: 'Next month', amount: 10, date: '2026-10-02', currency: 'AED' });
+  ok('new month tab follows your naming', oct.created && oct.tab === 'UAE Finances - October 2026', oct.tab);
+
+  api.invalidateTabs();
+  const target = api.readExpenses().find(r => r.name === 'Pizza w / Rana');
+  api.updateRow({ kind: 'expense', row: target.row, tab: target.tab, values: { name: 'Pizza edited', amount: 55 } });
+  ok('edit writes to the right columns', sep26._g[target.row - 1][0] === 'Pizza edited' && sep26._g[target.row - 1][1] === 55,
+     JSON.stringify(sep26._g[target.row - 1].slice(0, 3).map(String)));
+
+  api.invalidateTabs();
+  const meta = api.pullAll().meta;
+  ok('meta lists card tabs and skipped tabs', meta.cardTabs.length === 5 && meta.skippedTabs.length > 0,
+     'skipped: ' + meta.skippedTabs.join(', '));
+
+  const failed = R.filter(r => r.startsWith('FAIL')).length;
+  document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;
+})().catch(e => { document.getElementById('out').textContent = 'ERROR: ' + (e && e.stack || e); });
+</script>
