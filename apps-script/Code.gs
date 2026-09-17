@@ -12,6 +12,11 @@
  * phone, and the standalone HTML file) read/write access to your sheets,
  * so edits flow both ways.
  *
+ * KEEPING YOUR SETTINGS: put them in a second file (File → + → Script, name it
+ * "Config") containing one line:
+ *     var USER_CONFIG = { SECRET: 'your secret', CAR_SHEET_ID: '…', EXPENSES_SHEET_ID: '…' };
+ * Then updating is just: select all in Code.gs, paste the new version, redeploy.
+ *
  * SETUP (about 3 minutes)
  *  1. Go to script.google.com → New project → paste this file over Code.gs
  *  2. Put your own IDs in CONFIG below (they are already filled in for you).
@@ -57,6 +62,17 @@ var CONFIG = {
    ENTRY POINTS
    ============================================================ */
 
+/**
+ * Your settings can live in a separate file called Config.gs holding just:
+ *     var USER_CONFIG = { SECRET: '…', CAR_SHEET_ID: '…', EXPENSES_SHEET_ID: '…' };
+ * Anything it defines wins over CONFIG above, so pasting a new Code.gs over this
+ * one never loses your setup. Without that file, CONFIG above is used as-is.
+ */
+function applyUserConfig() {
+  if (typeof USER_CONFIG === 'undefined') return;
+  for (var k in USER_CONFIG) CONFIG[k] = USER_CONFIG[k];
+}
+
 function doGet(e) {
   return handle(e, {});
 }
@@ -72,6 +88,7 @@ function doPost(e) {
 }
 
 function handle(e, body) {
+  applyUserConfig();
   var p = e && e.parameter ? e.parameter : {};
   var action = body.action || p.action || 'pull';
   var secret = body.secret || p.secret || '';
@@ -134,8 +151,8 @@ function pullAll() {
   };
 }
 
-function openCar() { return SpreadsheetApp.openById(CONFIG.CAR_SHEET_ID); }
-function openExpenses() { return SpreadsheetApp.openById(CONFIG.EXPENSES_SHEET_ID); }
+function openCar() { applyUserConfig(); return SpreadsheetApp.openById(CONFIG.CAR_SHEET_ID); }
+function openExpenses() { applyUserConfig(); return SpreadsheetApp.openById(CONFIG.EXPENSES_SHEET_ID); }
 
 /** Values of a tab as a 2D array, trimmed of fully-empty trailing rows. */
 function gridOf(sheet) {
