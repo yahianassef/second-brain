@@ -21,7 +21,10 @@ add on one device shows up on the others.
 - **Dashboard** — stats, upcoming deadlines across everything, today's tasks, cash-flow chart
 - **Projects** — status, priority, area, progress, deadlines, linked task counts, kanban board
 - **Tasks** — priorities, due dates, grouping (overdue / today / this week), project links
-- **Finances** — transactions, budgets vs. actual, savings goals, and a live **Google Sheet** tab
+- **Finances** — transactions, budgets vs. actual, savings goals, and a live **Google Sheet** tab.
+  Every monthly tab of the expenses workbook is read as history; the dashboard always shows the
+  month you are in, and the range picker (this month / 3 months / year / all time) reaches back
+  through every tab
 - **Car Maintenance** — **Fuel** and **Service** pages, live from your car spreadsheet
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
 - **Courses** — lessons completed, progress, deadlines, resources
@@ -39,6 +42,10 @@ A Google Apps Script Web App acts as the API. It is the only piece that can hold
 and it runs under **your** account.
 
 **Setup, once:**
+
+> **Updating an existing deployment:** copy your current `CONFIG` values out first, paste the new
+> `Code.gs` over the old one, put the values back, then **Deploy → Manage deployments → ✏️ →
+> Version: New version → Deploy**. The URL and secret stay the same, so the apps need no changes.
 
 1. Open [script.google.com](https://script.google.com) → **New project**.
 2. Replace `Code.gs` with [`apps-script/Code.gs`](apps-script/Code.gs) from this repo.
@@ -62,8 +69,25 @@ then paste that code — no retyping.
 | Source | Destination | How fast |
 |---|---|---|
 | Edit in Google Sheets | every device | ≤ 15s while the app is open |
-| Add/edit in the app | Google Sheets | immediately |
+| Add/edit/delete in the app | Google Sheets | immediately |
 | Any app data (tasks, notes…) | other devices | ≤ 15s |
+
+**How expenses map to tabs**
+
+- Reading: **every tab** that has a name column (`Expense Name`, `Item`, `Description`…) and an
+  amount column (`Amount in AED`, `Amount in EGP`, `Amount`, `Cost`…). Tabs without such a table,
+  like a Summary tab, are ignored. A tab's month comes from its name — `UAE Finances November`,
+  `Nov 2025` and `2025-11` all work — and tabs named by month alone get their year by counting
+  forward from the first tab, so a January after a December belongs to the next year.
+- A row with no date inherits the first of its tab's month, so undated history still charts.
+- Writing: an expense logged in the app goes to the tab **for its own date**. If that month has no
+  tab yet, one is created by copying the newest tab's layout and renaming it (`UAE Finances
+  December`), with the year added when a month name would otherwise repeat.
+- Editing or deleting a row acts on the tab that row came from, not on whichever tab is newest.
+- Currency follows the tab: `Amount in EGP` tabs are EGP, the rest AED. The finance views show one
+  currency at a time (AED by default) with a switcher when both exist.
+- Income stays in the app, since these sheets hold expenses only. It syncs between devices through
+  the hidden `SecondBrain_Data` tab and appears in the app's totals alongside sheet expenses.
 
 The app polls a cheap "has anything changed?" probe every 15 seconds and only downloads the full
 workbook when a sheet actually changed — this keeps it well inside the Apps Script free runtime quota.

@@ -1,6 +1,10 @@
 /**
  * Second Brain — Google Sheets sync API
  * =====================================
+ * v4 — reads EVERY monthly expense tab (full history, not just the newest),
+ *      writes each expense into the tab for its own month (creating it when
+ *      needed), and applies edits and deletions to the tab the row lives in.
+ *
  * Deploy this once as a Web App. It gives the Second Brain apps (GitHub Pages,
  * phone, and the standalone HTML file) read/write access to your sheets,
  * so edits flow both ways.
@@ -69,10 +73,13 @@ function handle(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 3 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 4 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
-      case 'push':          return json({ ok: true, now: Date.now(), result: pushAll(body.data || {}), data: pullAll(), stamp: stamp() });
+      case 'push':
+        var pushed = pushAll(body.data || {});
+        invalidateTabs();
+        return json({ ok: true, now: Date.now(), result: pushed, data: pullAll(), stamp: stamp() });
       case 'addFuel':       return json({ ok: true, result: addFuel(body.row || {}) });
       case 'addService':    return json({ ok: true, result: addService(body.row || {}) });
       case 'addExpense':    return json({ ok: true, result: addExpense(body.row || {}) });
@@ -105,7 +112,10 @@ function pullAll() {
       carSheet: openCar().getName(),
       expensesSheet: openExpenses().getName(),
       expensesTab: expensesTab().getName(),
-      tabs: expenseTabs().map(function (t) { return { name: t.sheet.getName(), currency: t.currency }; }),
+      tabs: expenseTabs().map(function (t) {
+        return { name: t.name, month: t.month, currency: t.currency };
+      }),
+      thisMonth: isoMonth(new Date()),
       pulledAt: new Date().toISOString()
     }
   };
@@ -209,35 +219,123 @@ function readService() {
   return out;
 }
 
-/** Every tab that looks like an expense log: header row, amount column, currency. */
+/* ============================================================
+   EXPENSE TABS — every monthly tab is history, not just the newest
+   ============================================================ */
+
+var MONTHS = ['january', 'february', 'march', 'april', 'may', 'june',
+              'july', 'august', 'september', 'october', 'november', 'december'];
+var NAME_HEADERS = ['expense name', 'expense', 'expenses', 'item', 'description', 'name', 'details'];
+var AMOUNT_HEADERS = [
+  ['amount in aed', 'AED'], ['amount (aed)', 'AED'], ['amount aed', 'AED'], ['aed', 'AED'],
+  ['amount in egp', 'EGP'], ['amount (egp)', 'EGP'], ['amount egp', 'EGP'], ['egp', 'EGP'],
+  ['amount', ''], ['cost', ''], ['price', ''], ['value', ''], ['total', '']
+];
+var CATEGORY_HEADERS = ['category', 'categories', 'group', 'kind'];
+var METHOD_HEADERS = ['payment method', 'method', 'paid with', 'payment', 'account', 'card'];
+var DATE_HEADERS = ['date', 'day', 'when'];
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function isoMonth(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+
+/** Month + year hidden in a tab name: "UAE Finances November", "Nov 2025", "2025-11". */
+function monthFromName(name) {
+  var s = String(name || '').toLowerCase();
+  for (var i = 0; i < 12; i++) {
+    var full = MONTHS[i];
+    var hit = new RegExp('(^|[^a-z])(' + full + '|' + full.slice(0, 3) + ')([^a-z]|$)').exec(s);
+    if (hit) {
+      var y = /(20\d{2})/.exec(s);
+      return { month: i, year: y ? Number(y[1]) : null, token: hit[2] };
+    }
+  }
+  var ym = /(20\d{2})[-_\/ ]?(0[1-9]|1[0-2])(?![0-9])/.exec(s);
+  if (ym) return { month: Number(ym[2]) - 1, year: Number(ym[1]), token: ym[0] };
+  return null;
+}
+
+function currencyFromName(name) {
+  return /egypt|egp|cairo/.test(String(name || '').toLowerCase()) ? 'EGP' : 'AED';
+}
+
+/** The first row carrying both a name-ish and an amount-ish header. */
+function findExpenseTable(grid) {
+  var limit = Math.min(grid.length, 40);
+  for (var r = 0; r < limit; r++) {
+    var row = grid[r].map(function (c) { return String(c).trim().toLowerCase(); });
+    var nameCol = -1, amtCol = -1, currency = '';
+    for (var i = 0; i < NAME_HEADERS.length && nameCol < 0; i++) nameCol = row.indexOf(NAME_HEADERS[i]);
+    for (var j = 0; j < AMOUNT_HEADERS.length && amtCol < 0; j++) {
+      var c = row.indexOf(AMOUNT_HEADERS[j][0]);
+      if (c >= 0 && c !== nameCol) { amtCol = c; currency = AMOUNT_HEADERS[j][1]; }
+    }
+    if (nameCol >= 0 && amtCol >= 0) return { hr: r, nameCol: nameCol, amtCol: amtCol, currency: currency };
+  }
+  return null;
+}
+
+/** Tabs named only by month need a year: walk them in order and roll over past December. */
+function inferStartYear(ss) {
+  var y = /(20\d{2})/.exec(ss.getName());
+  if (y) return Number(y[1]);
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var m = monthFromName(sheets[i].getName());
+    if (m && m.year) return m.year;
+  }
+  return new Date().getFullYear();
+}
+
+/** Scanning every tab is the expensive part, so each request does it once. */
+var _tabCache = null;
+function invalidateTabs() { _tabCache = null; }
+
+/** Every tab holding an expense table, tagged with its month and currency. */
 function expenseTabs() {
+  if (_tabCache) return _tabCache;
+  var ss = openExpenses();
+  var startYear = inferStartYear(ss);
+  var prev = {};
   var out = [];
-  openExpenses().getSheets().forEach(function (sh) {
-    if (sh.getName() === CONFIG.BRAIN_TAB) return;
+  ss.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (name === CONFIG.BRAIN_TAB) return;
     var grid = gridOf(sh);
-    var hr = -1;
-    ['Expense Name', 'Expense', 'Expenses'].forEach(function (h) {
-      if (hr < 0) hr = findHeaderRow(grid, [h]);
-    });
-    if (hr < 0) return;
-    var nameCol = -1;
-    ['Expense Name', 'Expense', 'Expenses'].forEach(function (h) {
-      if (nameCol < 0) nameCol = colIndex(grid, hr, h);
-    });
-    var amtCol = -1, currency = '';
-    [['Amount in AED', 'AED'], ['Amount in EGP', 'EGP'], ['Amount', '']].forEach(function (pair) {
-      if (amtCol < 0) {
-        var c = colIndex(grid, hr, pair[0]);
-        if (c >= 0) { amtCol = c; currency = pair[1]; }
+    var found = findExpenseTable(grid);
+    if (!found) return;
+    var mm = monthFromName(name);
+    var month = '', token = '', family = name.toLowerCase();
+    if (mm) {
+      token = mm.token;
+      family = name.toLowerCase().replace(token, '#').replace(/20\d{2}/, '').replace(/\s+/g, ' ').trim();
+      var year = mm.year;
+      if (!year) {
+        var p = prev[family];
+        year = !p ? startYear : (mm.month <= p.month ? p.year + 1 : p.year);
       }
+      prev[family] = { month: mm.month, year: year };
+      month = year + '-' + pad2(mm.month + 1);
+    }
+    out.push({
+      sheet: sh, grid: grid, hr: found.hr, nameCol: found.nameCol, amtCol: found.amtCol,
+      currency: found.currency || currencyFromName(name),
+      month: month, token: token, family: family, name: name
     });
-    if (nameCol < 0 || amtCol < 0) return;
-    out.push({ sheet: sh, grid: grid, hr: hr, nameCol: nameCol, amtCol: amtCol, currency: currency || 'AED' });
   });
+  _tabCache = out;
   return out;
 }
 
-/** The tab new expenses are appended to. */
+function colByHeaders(grid, hr, headers) {
+  var row = grid[hr].map(function (c) { return String(c).trim().toLowerCase(); });
+  for (var i = 0; i < headers.length; i++) {
+    var c = row.indexOf(headers[i]);
+    if (c >= 0) return c;
+  }
+  return -1;
+}
+
+/** Default write tab: this month's AED tab, else the newest AED tab. Never creates. */
 function expensesTab() {
   var ss = openExpenses();
   if (CONFIG.EXPENSES_TAB) {
@@ -245,35 +343,44 @@ function expensesTab() {
     if (named) return named;
   }
   var tabs = expenseTabs();
-  for (var i = 0; i < tabs.length; i++) {
-    if (tabs[i].currency === 'AED') return tabs[i].sheet;
-  }
+  var now = isoMonth(new Date());
+  var exact = tabs.filter(function (t) { return t.month === now && t.currency === 'AED'; });
+  if (exact.length) return exact[0].sheet;
+  var aed = tabs.filter(function (t) { return t.currency === 'AED' && t.month; });
+  aed.sort(function (a, b) { return a.month < b.month ? -1 : 1; });
+  if (aed.length) return aed[aed.length - 1].sheet;
   return tabs.length ? tabs[0].sheet : ss.getSheets()[0];
 }
 
-/** Expense rows from every month tab, each tagged with its tab and currency. */
+/** Expense rows from EVERY month tab — this is the history the app charts. */
 function readExpenses() {
   var out = [];
   expenseTabs().forEach(function (t) {
     var grid = t.grid, hr = t.hr;
-    var cCat = colIndex(grid, hr, 'Category');
-    var cPay = colIndex(grid, hr, 'Payment Method');
-    var cDate = colIndex(grid, hr, 'Date');
-    var tabName = t.sheet.getName();
+    var cCat = colByHeaders(grid, hr, CATEGORY_HEADERS);
+    var cPay = colByHeaders(grid, hr, METHOD_HEADERS);
+    var cDate = colByHeaders(grid, hr, DATE_HEADERS);
     for (var r = hr + 1; r < grid.length; r++) {
       var name = String(grid[r][t.nameCol] || '').trim();
-      if (!name) continue;                       // totals rows carry an amount but no name
-      if (name.toLowerCase() === 'expense name') continue;
+      if (!name) continue;
+      var low = name.toLowerCase();
+      if (NAME_HEADERS.indexOf(low) !== -1) continue;             // a repeated header row
+      if (low === 'total' || low === 'totals' || low === 'sum') continue;
+      var date = cDate >= 0 ? asISO(grid[r][cDate]) : '';
+      var approx = false;
+      if (!date && t.month) { date = t.month + '-01'; approx = true; }  // undated rows belong to their tab's month
       out.push({
-        id: 'exp-' + tabName + '-' + (r + 1),
+        id: 'exp-' + t.name + '-' + (r + 1),
         row: r + 1,
-        tab: tabName,
+        tab: t.name,
+        month: date ? date.slice(0, 7) : t.month,
         currency: t.currency,
         name: name,
         amount: asNumber(grid[r][t.amtCol]),
         category: cCat >= 0 ? String(grid[r][cCat] || '').trim() : '',
         method: cPay >= 0 ? String(grid[r][cPay] || '').trim() : '',
-        date: cDate >= 0 ? asISO(grid[r][cDate]) : '',
+        date: date,
+        approxDate: approx,
         source: 'sheet'
       });
     }
@@ -324,28 +431,127 @@ function addService(row) {
   return { row: written };
 }
 
-function addExpense(row) {
-  var sh = expensesTab();
+/** The tab for a month + currency. Creates it from the newest tab's layout when missing. */
+function tabForMonth(month, currency, allowCreate) {
+  var tabs = expenseTabs();
+  var hit = null;
+  tabs.forEach(function (t) { if (!hit && t.month === month && t.currency === currency) hit = t; });
+  if (hit) return { tab: hit, created: false };
+  if (allowCreate) {
+    var sh = createMonthTab(month, currency, tabs);
+    invalidateTabs();
+    var made = null;
+    expenseTabs().forEach(function (t) { if (!made && t.name === sh.getName()) made = t; });
+    if (made) return { tab: made, created: true };
+  }
+  var fallback = null;
+  tabs.forEach(function (t) {
+    if (t.currency !== currency || !t.month) return;
+    if (!fallback || t.month > fallback.month) fallback = t;
+  });
+  if (!fallback) fallback = tabs.length ? tabs[0] : null;
+  if (!fallback) throw new Error('No expense tab found in the Expenses spreadsheet');
+  return { tab: fallback, created: false };
+}
+
+/** Copies the newest tab of the same currency, renames it for the new month, clears its rows. */
+function createMonthTab(month, currency, tabs) {
+  var ss = openExpenses();
+  var pool = tabs.filter(function (t) { return t.month && t.currency === currency; });
+  if (!pool.length) pool = tabs.filter(function (t) { return t.month; });
+  if (!pool.length) throw new Error('No monthly tab to copy a layout from');
+  pool.sort(function (a, b) { return a.month < b.month ? -1 : 1; });
+  var tpl = pool[pool.length - 1];
+  var name = nextTabName(tpl, month);
+  var clash = null;
+  tabs.forEach(function (t) { if (t.name === name) clash = t; });
+  if (clash) {
+    if (clash.month === month) return clash.sheet;                 // it already exists
+    name = uniqueTabName(ss, name, String(month).slice(0, 4));     // same month name, another year
+  } else if (ss.getSheetByName(name)) {
+    return ss.getSheetByName(name);
+  }
+  var sh = tpl.sheet.copyTo(ss).setName(name);
+  var last = sh.getLastRow();
+  if (last > tpl.hr + 1) {
+    sh.getRange(tpl.hr + 2, 1, last - tpl.hr - 1, sh.getLastColumn()).clearContent();
+  }
+  ss.setActiveSheet(sh);
+  ss.moveActiveSheet(ss.getNumSheets());
+  return sh;
+}
+
+/** Keeps month names unique across years: "UAE Finances November" -> "... November 2026". */
+function uniqueTabName(ss, name, year) {
+  if (!ss.getSheetByName(name)) return name;
+  var withYear = /20\d{2}/.test(name) ? name : name + ' ' + year;
+  if (!ss.getSheetByName(withYear)) return withYear;
+  var i = 2;
+  while (ss.getSheetByName(withYear + ' (' + i + ')')) i++;
+  return withYear + ' (' + i + ')';
+}
+
+/** "UAE Finances November" + 2025-12 -> "UAE Finances December". */
+function nextTabName(tpl, month) {
+  var parts = String(month).split('-');
+  var year = parts[0], mi = Number(parts[1]) - 1;
+  var word = MONTHS[mi];
+  var name = tpl.name;
+  if (tpl.token) {
+    var repl = tpl.token.length === 3 ? word.slice(0, 3) : word;
+    repl = repl.charAt(0).toUpperCase() + repl.slice(1);
+    name = name.replace(new RegExp(tpl.token, 'i'), repl);
+    if (/20\d{2}/.test(name)) name = name.replace(/20\d{2}/, year);
+    else if (tpl.month && tpl.month.slice(0, 4) !== year) name = name + ' ' + year;
+  } else {
+    name = name + ' ' + word.charAt(0).toUpperCase() + word.slice(1) + ' ' + year;
+  }
+  return name;
+}
+
+/** Writes each value into the column its header names, in the table's first free row. */
+function appendByHeaders(t, v) {
+  var sh = t.sheet;
   var grid = gridOf(sh);
-  var hr = findHeaderRow(grid, ['Expense Name', 'Amount in AED']);
-  if (hr < 0) throw new Error('Expense table not found');
-  var c0 = colIndex(grid, hr, 'Expense Name');
-  var written = appendUnderTable(sh, hr, c0, [
-    String(row.name || ''),
-    asNumber(row.amount),
-    String(row.category || ''),
-    String(row.method || ''),
-    row.date ? new Date(row.date) : new Date()
-  ]);
-  return { row: written, tab: sh.getName() };
+  var r = t.hr + 1;
+  while (r < grid.length && String(grid[r][t.nameCol] || '').trim() !== '') r++;
+  var rowNum = r + 1;
+  var cCat = colByHeaders(grid, t.hr, CATEGORY_HEADERS);
+  var cPay = colByHeaders(grid, t.hr, METHOD_HEADERS);
+  var cDate = colByHeaders(grid, t.hr, DATE_HEADERS);
+  sh.getRange(rowNum, t.nameCol + 1).setValue(v.name);
+  sh.getRange(rowNum, t.amtCol + 1).setValue(v.amount);
+  if (cCat >= 0 && v.category) sh.getRange(rowNum, cCat + 1).setValue(v.category);
+  if (cPay >= 0 && v.method) sh.getRange(rowNum, cPay + 1).setValue(v.method);
+  if (cDate >= 0 && v.date) sh.getRange(rowNum, cDate + 1).setValue(v.date);
+  return rowNum;
+}
+
+/** An expense logged in the app lands in its own month's tab. */
+function addExpense(row) {
+  var currency = String(row.currency || 'AED').toUpperCase();
+  var date = row.date ? new Date(row.date) : new Date();
+  var month = isoMonth(date);
+  var res = tabForMonth(month, currency, true);
+  var rowNum = appendByHeaders(res.tab, {
+    name: String(row.name || ''),
+    amount: asNumber(row.amount),
+    category: String(row.category || ''),
+    method: String(row.method || ''),
+    date: date
+  });
+  invalidateTabs();
+  return { row: rowNum, tab: res.tab.name, created: res.created, month: month, currency: currency };
 }
 
 /** Applies a batch of app-side changes. */
 function pushAll(data) {
-  var result = { fuel: 0, service: 0, expenses: 0, brain: false };
+  var result = { fuel: 0, service: 0, expenses: 0, edits: 0, deletes: 0, brain: false };
   (data.newFuel || []).forEach(function (r) { addFuel(r); result.fuel++; });
   (data.newService || []).forEach(function (r) { addService(r); result.service++; });
   (data.newExpenses || []).forEach(function (r) { addExpense(r); result.expenses++; });
+  (data.edits || []).forEach(function (e) { updateRow(e); result.edits++; });
+  (data.deletes || []).forEach(function (d) { deleteRow(d); result.deletes++; });
   if (data.brain) { writeBrain(data.brain); result.brain = true; }
   return result;
 }
@@ -400,48 +606,69 @@ function writeBrain(obj) {
    EDIT AND DELETE EXISTING ROWS (so app edits reach the sheet)
    ============================================================ */
 
-function targetSheet(kind) {
-  if (kind === 'expense') return expensesTab();
+function carSheet(kind) {
   if (kind === 'fuel') return CONFIG.CAR_FUEL_TAB ? openCar().getSheetByName(CONFIG.CAR_FUEL_TAB) : openCar().getSheets()[0];
   return CONFIG.CAR_SERVICE_TAB ? openCar().getSheetByName(CONFIG.CAR_SERVICE_TAB) : openCar().getSheets()[0];
 }
 
-function headerFor(kind, grid) {
-  if (kind === 'fuel') return findHeaderRow(grid, ['Odometer Reading', 'Date', 'Cost']);
-  if (kind === 'service') return findHeaderRow(grid, ['Item', 'Cost', 'Date']);
-  return findHeaderRow(grid, ['Expense Name', 'Amount in AED']);
+/** An expense row number means nothing without its tab, so every edit carries one. */
+function expenseTabByName(name) {
+  var hit = null;
+  expenseTabs().forEach(function (t) { if (!hit && t.name === name) hit = t; });
+  return hit;
 }
 
-/** body: { kind:'fuel'|'service'|'expense', row:<1-based sheet row>, values:{...} } */
+function expenseTabFor(body) {
+  var t = body.tab ? expenseTabByName(body.tab) : null;
+  if (!t) t = expenseTabByName(expensesTab().getName());
+  if (!t) throw new Error('Expense tab not found: ' + (body.tab || '(default)'));
+  return t;
+}
+
+function carHeaderRow(kind, grid) {
+  return kind === 'fuel'
+    ? findHeaderRow(grid, ['Odometer Reading', 'Date', 'Cost'])
+    : findHeaderRow(grid, ['Item', 'Cost', 'Date']);
+}
+
+/** body: { kind, row (1-based), tab (expense only), values } */
 function updateRow(body) {
   var kind = body.kind, rowNum = Number(body.row), v = body.values || {};
   if (!rowNum) throw new Error('No row given');
-  var sh = targetSheet(kind);
-  var grid = gridOf(sh);
-  var hr = headerFor(kind, grid);
-  if (hr < 0) throw new Error('Table not found for ' + kind);
 
+  if (kind === 'expense') {
+    var t = expenseTabFor(body);
+    var g = gridOf(t.sheet);
+    var cCat = colByHeaders(g, t.hr, CATEGORY_HEADERS);
+    var cPay = colByHeaders(g, t.hr, METHOD_HEADERS);
+    var cDate = colByHeaders(g, t.hr, DATE_HEADERS);
+    if (v.name !== undefined) t.sheet.getRange(rowNum, t.nameCol + 1).setValue(String(v.name));
+    if (v.amount !== undefined) t.sheet.getRange(rowNum, t.amtCol + 1).setValue(asNumber(v.amount));
+    if (v.category !== undefined && cCat >= 0) t.sheet.getRange(rowNum, cCat + 1).setValue(String(v.category));
+    if (v.method !== undefined && cPay >= 0) t.sheet.getRange(rowNum, cPay + 1).setValue(String(v.method));
+    if (v.date && cDate >= 0) t.sheet.getRange(rowNum, cDate + 1).setValue(new Date(v.date));
+    invalidateTabs();
+    return { row: rowNum, kind: kind, tab: t.name };
+  }
+
+  var sh = carSheet(kind);
+  var grid = gridOf(sh);
+  var hr = carHeaderRow(kind, grid);
+  if (hr < 0) throw new Error('Table not found for ' + kind);
   function put(header, value) {
     var c = colIndex(grid, hr, header);
     if (c < 0 || value === undefined || value === null) return;
     sh.getRange(rowNum, c + 1).setValue(value);
   }
-
   if (kind === 'fuel') {
     put('Odometer Reading', v.odometer !== undefined ? asNumber(v.odometer) : undefined);
     put('Cost', v.cost !== undefined ? asNumber(v.cost) : undefined);
     put('Date', v.date ? new Date(v.date) : undefined);
-  } else if (kind === 'service') {
+  } else {
     put('Item', v.item);
     put('Cost', v.cost !== undefined ? asNumber(v.cost) : undefined);
     put('Date', v.date ? new Date(v.date) : undefined);
     put('Odometer Reading', v.odometer !== undefined ? asNumber(v.odometer) : undefined);
-  } else {
-    put('Expense Name', v.name);
-    put('Amount in AED', v.amount !== undefined ? asNumber(v.amount) : undefined);
-    put('Category', v.category);
-    put('Payment Method', v.method);
-    put('Date', v.date ? new Date(v.date) : undefined);
   }
   return { row: rowNum, kind: kind };
 }
@@ -450,13 +677,27 @@ function updateRow(body) {
 function deleteRow(body) {
   var kind = body.kind, rowNum = Number(body.row);
   if (!rowNum) throw new Error('No row given');
-  var sh = targetSheet(kind);
+
+  if (kind === 'expense') {
+    var t = expenseTabFor(body);
+    var g = gridOf(t.sheet);
+    [t.nameCol, t.amtCol,
+      colByHeaders(g, t.hr, CATEGORY_HEADERS),
+      colByHeaders(g, t.hr, METHOD_HEADERS),
+      colByHeaders(g, t.hr, DATE_HEADERS)].forEach(function (c) {
+      if (c >= 0) t.sheet.getRange(rowNum, c + 1).clearContent();
+    });
+    invalidateTabs();
+    return { row: rowNum, kind: kind, tab: t.name, cleared: true };
+  }
+
+  var sh = carSheet(kind);
   var grid = gridOf(sh);
-  var hr = headerFor(kind, grid);
+  var hr = carHeaderRow(kind, grid);
   if (hr < 0) throw new Error('Table not found for ' + kind);
-  var headers = kind === 'fuel' ? ['Odometer Reading', 'Date', 'Cost']
-    : kind === 'service' ? ['Item', 'Cost', 'Date', 'Odometer Reading']
-    : ['Expense Name', 'Amount in AED', 'Category', 'Payment Method', 'Date'];
+  var headers = kind === 'fuel'
+    ? ['Odometer Reading', 'Date', 'Cost']
+    : ['Item', 'Cost', 'Date', 'Odometer Reading'];
   headers.forEach(function (h) {
     var c = colIndex(grid, hr, h);
     if (c >= 0) sh.getRange(rowNum, c + 1).clearContent();

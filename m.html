@@ -907,7 +907,7 @@ const projName = id => (DB.projects.find(p => p.id === id) || {}).name || '';
 const EXPORTS = {
   Projects: { rows: () => DB.projects, cols: [['Project', 'name'], ['Status', 'status'], ['Priority', 'priority'], ['Area', 'area'], ['Start Date', 'start'], ['Deadline', 'deadline'], ['Progress %', r => num(r.progress) + '%'], ['Link', 'link'], ['Description', 'description']] },
   Tasks: { rows: () => DB.tasks, cols: [['Task', 'title'], ['Project', r => projName(r.projectId)], ['Priority', 'priority'], ['Status', 'status'], ['Due Date', 'due'], ['Notes', 'notes']] },
-  Transactions: { rows: () => [...DB.transactions].sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Type', 'type'], ['Category', 'category'], ['Description', 'description'], ['Amount', 'amount'], ['Account', 'account']] },
+  Transactions: { rows: () => [...(typeof usingSheets === 'function' && usingSheets() ? expenseUniverse() : DB.transactions)].sort((a, b) => String(a.date).localeCompare(String(b.date))), cols: [['Date', 'date'], ['Type', 'type'], ['Category', 'category'], ['Description', 'description'], ['Amount', 'amount'], ['Account', 'account']] },
   Budget: { rows: () => DB.budgets, cols: [['Category', 'category'], ['Monthly Budget', 'limit']] },
   Goals: { rows: () => DB.goals, cols: [['Goal', 'name'], ['Target Amount', 'target'], ['Saved So Far', 'saved'], ['Target Date', 'deadline']] },
   Journal: { rows: () => [...DB.journal].sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Title', 'title'], ['Mood', r => LISTS.moods[num(r.mood) - 1] || ''], ['Tags', r => (r.tags || []).join(', ')], ['Entry', 'content']] },
@@ -1316,18 +1316,19 @@ const Sheets = {
     this.queue(true);
     return local;
   },
-  editRow(kind, sheetRow, values) {
-    this.out.edits.push({ kind, row: sheetRow, values });
+  /** An expense row number is meaningless without its tab — every month tab has a row 7. */
+  editRow(kind, sheetRow, values, tab = '') {
+    this.out.edits.push({ kind, row: sheetRow, tab, values });
     const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
-    const item = (this.data[bucket] || []).find(x => x.row === sheetRow);
+    const item = (this.data[bucket] || []).find(x => x.row === sheetRow && (!tab || x.tab === tab));
     if (item) Object.assign(item, values, { pending: true });
     this.saveCache();
     this.queue(true);
   },
-  removeRow(kind, sheetRow) {
-    this.out.deletes.push({ kind, row: sheetRow });
+  removeRow(kind, sheetRow, tab = '') {
+    this.out.deletes.push({ kind, row: sheetRow, tab });
     const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
-    this.data[bucket] = (this.data[bucket] || []).filter(x => x.row !== sheetRow);
+    this.data[bucket] = (this.data[bucket] || []).filter(x => !(x.row === sheetRow && (!tab || x.tab === tab)));
     this.saveCache();
     this.queue(true);
   },
@@ -1456,7 +1457,7 @@ const Sheets = {
       <div class="modal-body">
         <div class="sync-state" data-sheets-status><span class="sync-dot"></span><b data-sheets-text>${esc(this.label())}</b></div>
         <p class="hint" style="margin-top:8px">${esc(this.message)}</p>
-        ${this.data.meta ? `<p class="hint">Reading <b>${esc(this.data.meta.carSheet)}</b> and <b>${esc(this.data.meta.expensesSheet)}</b> (tab ${esc(this.data.meta.expensesTab)}).</p>` : ''}
+        ${this.data.meta ? `<p class="hint">Reading <b>${esc(this.data.meta.carSheet)}</b> and every month tab of <b>${esc(this.data.meta.expensesSheet)}</b> (${plural((this.data.meta.tabs || []).length, 'tab')}; new rows go to <b>${esc(this.data.meta.expensesTab)}</b>).</p>` : ''}
         <div class="set-section"><h4>Connection</h4>
           <p>Paste the <b>/exec</b> URL from your Apps Script deployment, and the same secret you set inside the script.</p>
           <div class="form-grid">
@@ -1566,19 +1567,34 @@ function fuelStats() {
    ========================================================= */
 const usingSheets = () => Sheets.connected() && (Sheets.data.expenses || []).length > 0;
 /** Currency the finance figures are shown in (the sheets hold AED and EGP). */
-const baseCur = () => usingSheets() ? (UI.finCurrency || 'AED') : (DB.settings.currency || '$');
+const baseCur = () => {
+  if (!usingSheets()) return DB.settings.currency || '$';
+  const avail = currenciesAvailable();
+  if (UI.finCurrency && avail.indexOf(UI.finCurrency) !== -1) return UI.finCurrency;
+  return avail.indexOf('AED') !== -1 ? 'AED' : (avail[0] || 'AED');
+};
 
 function expenseUniverse() {
   if (usingSheets()) {
-    return (Sheets.data.expenses || []).map(r => ({
-      id: r.id, row: r.row, tab: r.tab, pending: r.pending,
+    const rows = (Sheets.data.expenses || []).map(r => ({
+      id: r.id, row: r.row, tab: r.tab, pending: r.pending, approxDate: r.approxDate,
+      month: r.month || String(r.date || '').slice(0, 7),
       date: r.date, description: r.name, amount: num(r.amount),
       category: r.category || 'Uncategorised', account: r.method || '',
       currency: r.currency || 'AED', type: 'Expense', source: 'sheet'
     }));
+    // Your sheets hold expenses only, so income stays app-side and joins the same view.
+    const income = (DB.transactions || []).filter(x => x.type === 'Income').map(x => ({
+      id: x.id, date: x.date, month: String(x.date || '').slice(0, 7),
+      description: x.description, amount: num(x.amount),
+      category: x.category, account: x.account,
+      currency: x.currency || 'AED', type: 'Income', source: 'local'
+    }));
+    return rows.concat(income);
   }
   return (DB.transactions || []).map(x => ({
-    id: x.id, date: x.date, description: x.description, amount: num(x.amount),
+    id: x.id, date: x.date, month: String(x.date || '').slice(0, 7),
+    description: x.description, amount: num(x.amount),
     category: x.category, account: x.account, currency: DB.settings.currency || '$',
     type: x.type, source: 'local'
   }));
@@ -1628,7 +1644,37 @@ function filteredExpenses() {
 /** Months that actually contain data, newest first — drives the month picker. */
 function monthsWithData() {
   const set = new Set(expenseUniverse().filter(x => x.date).map(x => x.date.slice(0, 7)));
+  set.add(today().slice(0, 7));   // the current month is always selectable
   return [...set].sort().reverse();
+}
+
+/** The sheet tab a row of this month + currency belongs to, or null if none exists yet. */
+function sheetTabFor(dateStr, currency) {
+  const tabs = (Sheets.data.meta && Sheets.data.meta.tabs) || [];
+  const m = String(dateStr || today()).slice(0, 7);
+  const cur = currency || 'AED';
+  return tabs.find(t => t.month === m && (t.currency || 'AED') === cur) || null;
+}
+
+/** Currencies offered when adding — whatever exists, plus the two the sheets use. */
+function currencyChoices() {
+  return [...new Set([...currenciesAvailable(), 'AED', 'EGP'])].filter(Boolean);
+}
+
+/** Tells you where a row will be written before you press save. */
+function sheetFormHint(kind, item, vals) {
+  if (kind !== 'expense') {
+    return item ? `Saves to row ${item.row || '—'} of your sheet.` : 'Appended to the bottom of the table in your sheet.';
+  }
+  if (item && item.row && !item.pending) {
+    return `Saves to row ${item.row} of <b>${esc(item.tab || 'your sheet')}</b>.`;
+  }
+  const cur = vals.currency || baseCur();
+  const hit = sheetTabFor(vals.date, cur);
+  const label = monthLabel(String(vals.date || today()).slice(0, 7), true);
+  return hit
+    ? `Appended to <b>${esc(hit.name)}</b> in your Expenses sheet.`
+    : `No ${esc(cur)} tab for ${esc(label)} yet — one will be created from your newest tab's layout.`;
 }
 
 /* =========================================================
@@ -1658,7 +1704,8 @@ const SHEET_FORMS = {
     noun: 'Expense', kind: 'expense',
     fields: [
       { k: 'name', l: 'Expense name', t: 'text', req: true, full: true, ph: 'Groceries' },
-      { k: 'amount', l: 'Amount (AED)', t: 'number', req: true, step: '0.01', min: 0 },
+      { k: 'amount', l: 'Amount', t: 'number', req: true, step: '0.01', min: 0 },
+      { k: 'currency', l: 'Currency', t: 'select', o: () => currencyChoices(), def: () => baseCur(), addOnly: true },
       { k: 'category', l: 'Category', t: 'text', ph: 'Essentials' },
       { k: 'method', l: 'Payment method', t: 'text', ph: 'ADCB' },
       { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() }
@@ -1668,7 +1715,9 @@ const SHEET_FORMS = {
 
 /** Add or edit a row that lives in Google Sheets. */
 function openSheetForm(kind, item = null) {
-  const cfg = SHEET_FORMS[kind];
+  const base = SHEET_FORMS[kind];
+  // "addOnly" fields (currency) make no sense when editing — the row's tab already fixes it
+  const cfg = { ...base, fields: base.fields.filter(f => !(f.addOnly && item)) };
   if (!Sheets.connected()) {
     toast('Connect Google Sheets first', { tone: 'error' });
     Sheets.openPanel();
@@ -1686,7 +1735,7 @@ function openSheetForm(kind, item = null) {
     </div>
     <form class="modal-body" novalidate autocomplete="off">
       <div class="form-grid">${cfg.fields.map(f => fieldHTML(f, vals)).join('')}</div>
-      <p class="hint" style="margin-top:12px">${item ? 'Saves to row ' + (item.row || '—') + ' of your sheet.' : 'Appended to the bottom of the table in your sheet.'}</p>
+      <p class="hint" style="margin-top:12px" data-hint>${sheetFormHint(kind, item, vals)}</p>
     </form>
     <div class="modal-foot">
       ${canDelete ? `<button class="btn btn-danger" data-del>${icon('trash', 15)} <span>Delete</span></button>` : ''}
@@ -1695,7 +1744,12 @@ function openSheetForm(kind, item = null) {
     </div>`, cfg.wide);
 
   const form = $('form', m);
-  form.addEventListener('input', e => e.target.closest('.field')?.classList.remove('invalid'));
+  const refreshHint = () => {
+    const h = $('[data-hint]', m);
+    if (h) h.innerHTML = sheetFormHint(kind, item, readForm(form, cfg));
+  };
+  form.addEventListener('input', e => { e.target.closest('.field')?.classList.remove('invalid'); refreshHint(); });
+  form.addEventListener('change', refreshHint);
 
   const submit = () => {
     const data = readForm(form, cfg);
@@ -1707,7 +1761,7 @@ function openSheetForm(kind, item = null) {
       return;
     }
     if (item && item.row && !item.pending) {
-      Sheets.editRow(kind, item.row, data);
+      Sheets.editRow(kind, item.row, data, item.tab || '');
       toast(`${cfg.noun} updated — saving to your sheet`);
     } else {
       Sheets.addRow(kind, data);
@@ -1723,7 +1777,7 @@ function openSheetForm(kind, item = null) {
   });
   if (canDelete) {
     $('[data-del]', m).onclick = () => {
-      Sheets.removeRow(kind, item.row);
+      Sheets.removeRow(kind, item.row, item.tab || '');
       closeModal(); render();
       toast(`${cfg.noun} deleted from your sheet`);
     };
@@ -1933,7 +1987,7 @@ SCREENS.money = () => {
     const total = sum(rows, r => r.amount);
     return head + `
       <div class="card">${cardHead('sheet', 'Google Sheet', `<span class="hint">${aedc(total)}</span>`)}
-        <p class="hint" style="margin-bottom:10px">${Sheets.data.meta ? esc(Sheets.data.meta.expensesSheet) + ' · ' + esc(Sheets.data.meta.expensesTab) : 'Live rows'}</p>
+        <p class="hint" style="margin-bottom:10px">${Sheets.data.meta ? esc(Sheets.data.meta.expensesSheet) + ' · ' + plural((Sheets.data.meta.tabs || []).length, 'month tab') : 'Live rows'}</p>
         <div class="list">${rows.length ? rows.map(r => `<div class="item" data-act="sheetEdit" data-kind="expense" data-id="${esc(r.id)}">
           <span class="tx-ico Expense">${icon('sheet', 16)}</span>
           <div class="grow"><div class="t">${esc(r.name)}${r.pending ? ' <span class="chip amber">saving</span>' : ''}</div>
@@ -1999,7 +2053,7 @@ SCREENS.money = () => {
       <span class="amt ${x.type}">${x.type === 'Income' ? '+' : '−'}${money(num(x.amount), 2)}</span></div>`).join('')
       : emptyState('wallet', 'Nothing in this range', 'Try another month or range.')}</div>
   </div>
-  <div class="btn-row"><button class="btn btn-primary" data-act="${sheets ? 'sheetAdd' : 'add'}" data-kind="expense" data-type="transactions">${icon('plus', 16)} Add ${sheets ? 'to sheet' : 'transaction'}</button></div>`;
+  <div class="btn-row"><button class="btn btn-primary" data-act="${sheets ? 'sheetAdd' : 'add'}" data-kind="expense" data-type="transactions">${icon('plus', 16)} Add ${sheets ? 'expense to sheet' : 'transaction'}</button>${sheets ? `<button class="btn btn-ghost" data-act="add" data-type="transactions" data-preset="${esc(JSON.stringify({ type: 'Income' }))}">${icon('arrowDown', 16)} Add income</button>` : ''}</div>`;
 };
 
 SCREENS.notes = () => {
