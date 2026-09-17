@@ -1,6 +1,9 @@
 /**
  * Second Brain — Google Sheets sync API
  * =====================================
+ * v5 — credit-card tabs (any charges table whose name has no month in it) are
+ *      read as debts and kept out of the expense history, so a card payment
+ *      copied into a month tab is not counted twice.
  * v4 — reads EVERY monthly expense tab (full history, not just the newest),
  *      writes each expense into the tab for its own month (creating it when
  *      needed), and applies edits and deletions to the tab the row lives in.
@@ -39,6 +42,12 @@ var CONFIG = {
   // monthly tab that has an "Expense Name" header.
   EXPENSES_TAB: '',
 
+  // Credit-card tabs, e.g. "ADCB Visa". Blank = any tab that has a charges table
+  // but no month in its name. Set a comma-separated list to name them explicitly.
+  CARD_TABS: '',
+  // Tabs to skip entirely, comma separated (a Summary tab, say).
+  IGNORE_TABS: '',
+
   // Where the Second Brain's own data (tasks, notes, projects…) is stored.
   // A tab is created automatically in the Expenses spreadsheet.
   BRAIN_TAB: 'SecondBrain_Data'
@@ -73,7 +82,7 @@ function handle(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 4 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 5 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -107,6 +116,7 @@ function pullAll() {
     fuel: readFuel(),
     service: readService(),
     expenses: readExpenses(),
+    cards: readCards(),
     brain: readBrain(),
     meta: {
       carSheet: openCar().getName(),
@@ -114,6 +124,9 @@ function pullAll() {
       expensesTab: expensesTab().getName(),
       tabs: expenseTabs().map(function (t) {
         return { name: t.name, month: t.month, currency: t.currency };
+      }),
+      cardTabs: cardTabs().map(function (t) {
+        return { name: t.name, currency: t.currency };
       }),
       thisMonth: isoMonth(new Date()),
       pulledAt: new Date().toISOString()
@@ -221,7 +234,9 @@ function readService() {
 
 /* ============================================================
    EXPENSE TABS — every monthly tab is history, not just the newest
+   CARD TABS   — one per credit card, charges summing to the debt
    ============================================================ */
+
 
 var MONTHS = ['january', 'february', 'march', 'april', 'may', 'june',
               'july', 'august', 'september', 'october', 'november', 'december'];
@@ -232,6 +247,9 @@ var AMOUNT_HEADERS = [
   ['amount', ''], ['cost', ''], ['price', ''], ['value', ''], ['total', '']
 ];
 var CATEGORY_HEADERS = ['category', 'categories', 'group', 'kind'];
+var PAID_HEADERS = ['paid', 'settled', 'cleared', 'status'];
+var TOTAL_WORDS = ['total', 'totals', 'subtotal', 'sum', 'grand total', 'balance',
+                   'current debt', 'outstanding', 'amount due'];
 var METHOD_HEADERS = ['payment method', 'method', 'paid with', 'payment', 'account', 'card'];
 var DATE_HEADERS = ['date', 'day', 'when'];
 
@@ -287,44 +305,63 @@ function inferStartYear(ss) {
 }
 
 /** Scanning every tab is the expensive part, so each request does it once. */
-var _tabCache = null;
-function invalidateTabs() { _tabCache = null; }
+var _scan = null;
+function invalidateTabs() { _scan = null; }
 
-/** Every tab holding an expense table, tagged with its month and currency. */
-function expenseTabs() {
-  if (_tabCache) return _tabCache;
+function listNames(csv) {
+  return String(csv || '').split(',').map(function (x) { return x.trim().toLowerCase(); })
+    .filter(function (x) { return !!x; });
+}
+
+/**
+ * Splits the workbook in two:
+ *   months — the expense history, one tab per month
+ *   cards  — credit-card tabs, whose charges add up to the current debt
+ * A tab with a charges table but no month in its name is a card.
+ */
+function scanTabs() {
+  if (_scan) return _scan;
   var ss = openExpenses();
   var startYear = inferStartYear(ss);
+  var forced = listNames(CONFIG.CARD_TABS);
+  var ignored = listNames(CONFIG.IGNORE_TABS);
   var prev = {};
-  var out = [];
+  var months = [], cards = [];
   ss.getSheets().forEach(function (sh) {
     var name = sh.getName();
     if (name === CONFIG.BRAIN_TAB) return;
+    if (ignored.indexOf(name.toLowerCase()) !== -1) return;
     var grid = gridOf(sh);
     var found = findExpenseTable(grid);
     if (!found) return;
-    var mm = monthFromName(name);
-    var month = '', token = '', family = name.toLowerCase();
-    if (mm) {
-      token = mm.token;
-      family = name.toLowerCase().replace(token, '#').replace(/20\d{2}/, '').replace(/\s+/g, ' ').trim();
-      var year = mm.year;
-      if (!year) {
-        var p = prev[family];
-        year = !p ? startYear : (mm.month <= p.month ? p.year + 1 : p.year);
-      }
-      prev[family] = { month: mm.month, year: year };
-      month = year + '-' + pad2(mm.month + 1);
-    }
-    out.push({
+    var tab = {
       sheet: sh, grid: grid, hr: found.hr, nameCol: found.nameCol, amtCol: found.amtCol,
-      currency: found.currency || currencyFromName(name),
-      month: month, token: token, family: family, name: name
-    });
+      currency: found.currency || currencyFromName(name), name: name, month: '', token: '', family: name.toLowerCase()
+    };
+    var mm = monthFromName(name);
+    var isCard = forced.length ? forced.indexOf(name.toLowerCase()) !== -1 : !mm;
+    if (isCard) { cards.push(tab); return; }
+    if (!mm) return;                       // no month and not a card: nothing to read
+    tab.token = mm.token;
+    tab.family = name.toLowerCase().replace(mm.token, '#').replace(/20\d{2}/, '').replace(/\s+/g, ' ').trim();
+    var year = mm.year;
+    if (!year) {
+      var p = prev[tab.family];
+      year = !p ? startYear : (mm.month <= p.month ? p.year + 1 : p.year);
+    }
+    prev[tab.family] = { month: mm.month, year: year };
+    tab.month = year + '-' + pad2(mm.month + 1);
+    months.push(tab);
   });
-  _tabCache = out;
-  return out;
+  _scan = { months: months, cards: cards };
+  return _scan;
 }
+
+/** Month tabs only — the expense history. */
+function expenseTabs() { return scanTabs().months; }
+
+/** Credit-card tabs — charges that add up to what is owed. */
+function cardTabs() { return scanTabs().cards; }
 
 function colByHeaders(grid, hr, headers) {
   var row = grid[hr].map(function (c) { return String(c).trim().toLowerCase(); });
@@ -386,6 +423,54 @@ function readExpenses() {
     }
   });
   return out;
+}
+
+/**
+ * Every credit-card tab with its charges. The debt is their sum; a row marked
+ * paid in a Paid/Status column is left out, and the tab's own total row is
+ * skipped so it is never counted twice.
+ */
+function readCards() {
+  return cardTabs().map(function (t) {
+    var grid = t.grid, hr = t.hr;
+    var cDate = colByHeaders(grid, hr, DATE_HEADERS);
+    var cCat = colByHeaders(grid, hr, CATEGORY_HEADERS);
+    var cPaid = colByHeaders(grid, hr, PAID_HEADERS);
+    var rows = [], debt = 0, last = '';
+    for (var r = hr + 1; r < grid.length; r++) {
+      var name = String(grid[r][t.nameCol] || '').trim();
+      if (!name) continue;
+      var low = name.toLowerCase();
+      if (NAME_HEADERS.indexOf(low) !== -1) continue;
+      if (TOTAL_WORDS.indexOf(low) !== -1) continue;
+      var paid = cPaid >= 0 && /^(y|yes|paid|done|cleared|settled|true|1)$/i
+        .test(String(grid[r][cPaid] || '').trim());
+      var amount = asNumber(grid[r][t.amtCol]);
+      var date = cDate >= 0 ? asISO(grid[r][cDate]) : '';
+      if (date && date > last) last = date;
+      if (!paid) debt += amount;
+      rows.push({
+        id: 'card-' + t.name + '-' + (r + 1),
+        row: r + 1,
+        card: t.name,
+        name: name,
+        amount: amount,
+        date: date,
+        category: cCat >= 0 ? String(grid[r][cCat] || '').trim() : '',
+        paid: paid,
+        currency: t.currency
+      });
+    }
+    return {
+      name: t.name,
+      currency: t.currency,
+      debt: Math.round(debt * 100) / 100,
+      charges: rows.length,
+      unpaid: rows.filter(function (x) { return !x.paid; }).length,
+      lastDate: last,
+      rows: rows
+    };
+  });
 }
 
 /* ============================================================

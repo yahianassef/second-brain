@@ -22,9 +22,12 @@ add on one device shows up on the others.
 - **Projects** — status, priority, area, progress, deadlines, linked task counts, kanban board
 - **Tasks** — priorities, due dates, grouping (overdue / today / this week), project links
 - **Finances** — transactions, budgets vs. actual, savings goals, and a live **Google Sheet** tab.
+  Each month's page carries a spending-by-category chart, and the list sorts by date, amount or
+  category — the last of which groups rows under category subtotals.
   Every monthly tab of the expenses workbook is read as history; the dashboard always shows the
   month you are in, and the range picker (this month / 3 months / year / all time) reaches back
   through every tab
+- **Cards** — one page per credit card, its charges adding up to what is currently owed
 - **Car Maintenance** — **Fuel** and **Service** pages, live from your car spreadsheet
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
 - **Courses** — lessons completed, progress, deadlines, resources
@@ -86,6 +89,12 @@ then paste that code — no retyping.
 - Editing or deleting a row acts on the tab that row came from, not on whichever tab is newest.
 - Currency follows the tab: `Amount in EGP` tabs are EGP, the rest AED. The finance views show one
   currency at a time (AED by default) with a switcher when both exist.
+- **Credit-card tabs** (a charges table whose name has no month in it, like `ADCB Visa`) are read
+  as debts, never as expenses: the current debt is the sum of their charges, skipping the tab's own
+  total row and anything marked in a `Paid`/`Status` column. They are kept out of expense totals on
+  purpose — the payment you copy into a month tab is what counts as the expense, so counting the
+  charges too would double up. Name them explicitly with `CONFIG.CARD_TABS` if the guess is wrong,
+  or exclude a tab entirely with `CONFIG.IGNORE_TABS`.
 - Income stays in the app, since these sheets hold expenses only. It syncs between devices through
   the hidden `SecondBrain_Data` tab and appears in the app's totals alongside sheet expenses.
 

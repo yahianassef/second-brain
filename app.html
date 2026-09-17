@@ -322,6 +322,12 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6) sepia(1) h
 .tbl tbody tr:hover{background:rgba(0,102,255,.06)}
 .tbl tbody tr:hover .hover-actions{opacity:1}
 .tbl tfoot td{font-weight:600;border-bottom:0;background:rgba(21,26,36,.5)}
+.tbl tr.grp{cursor:default}
+.tbl tr.grp:hover{background:none}
+.tbl tr.grp td{background:rgba(0,102,255,.07);border-bottom:1px solid var(--border-2);padding:8px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tbl tr.grp td span{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--blue-2);font-weight:600}
+.tbl tr.grp td b{font-family:var(--mono);font-size:12px;color:var(--text-2);font-weight:500}
+.tbl tr.paid td{opacity:.5}
 .tx-desc{display:flex;align-items:center;gap:10px;font-weight:500}
 .tx-ico{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex-shrink:0}
 .tx-ico.Income{background:rgba(0,168,255,.14);color:var(--blue-2)}
@@ -1225,7 +1231,7 @@ const UI = {
   view: 'dashboard', captureType: 'task',
   projFilter: 'All', projView: 'grid', projSort: 'deadline',
   taskFilter: 'active', taskPrio: '', taskProject: '',
-  finTab: 'overview', finMonth: today().slice(0, 7), txType: '', txCat: '', txAll: false,
+  finTab: 'overview', finMonth: today().slice(0, 7), txType: '', txCat: '', txAll: false, txSort: 'date',
   finRange: 'month', finFrom: '', finTo: '', finCurrency: 'AED',
   carTab: 'fuel',
   journalSel: null, journalQuery: '',
@@ -1381,6 +1387,10 @@ RENDER.dashboard = () => {
     ${usingSheets()
       ? stat('finances', 'wallet', `Spent · ${monthLabel(m)}`, money(fin.expense), `${entryCount(expenseUniverse().filter(x => String(x.date || '').slice(0, 7) === m && x.currency === baseCur()).length)} from your sheet`)
       : stat('finances', 'wallet', `Net · ${monthLabel(m)}`, money(fin.net, 0, true), `${money(fin.income)} in · ${money(fin.expense)} out`, fin.net < 0 ? 'txt-red' : '')}
+    ${usingSheets() && cardList().length ? `<div class="card stat hoverable" data-act="finTab" data-val="cards" tabindex="0">
+      <div class="label"><span class="ico">${icon('wallet', 16)}</span>Card debt</div>
+      <div class="value txt-red">${curMoney(cardDebtTotal(baseCur()), baseCur())}</div>
+      <div class="sub">${plural(cardList().length, 'card')} · ${sum(cardList(), c => c.unpaid)} open charges</div></div>` : ''}
     ${stat('courses', 'cap', 'Learning progress', avgCourse + '%', `${plural(activeCourses.length, 'active course')}`)}
     ${stat('journal', 'flame', 'Journal streak', plural(streak, 'day'), `${DB.journal.filter(j => j.date.slice(0, 7) === m).length} entries this month`)}
     ${stat('notes', 'note', 'Notes', DB.notes.length, `${DB.notes.filter(n => n.pinned).length} pinned · ${new Set(DB.notes.map(n => n.category)).size} categories`)}
@@ -1589,8 +1599,8 @@ RENDER.finances = () => {
     <span class="m-label">${monthLabel(UI.finMonth, true)}</span>
     <button class="icon-btn" data-act="month" data-val="1" aria-label="Next month">${icon('chevR', 16)}</button>
   </div>${UI.finMonth !== today().slice(0, 7) ? `<button class="btn btn-ghost sm" data-act="thisMonth">This month</button>` : ''}`;
-  const head = `<div class="toolbar">${segBtns('finTab', [['overview', 'Overview'], ['transactions', 'Transactions'], ['budgets', 'Budgets'], ['goals', 'Goals']])}<span class="spacer"></span>${tab !== 'goals' ? nav : ''}</div>`;
-  return head + { overview: finOverview, transactions: finTransactions, budgets: finBudgets, goals: finGoals, sheet: finTransactions }[tab]();
+  const head = `<div class="toolbar">${segBtns('finTab', [['overview', 'Overview'], ['transactions', 'Transactions'], ['cards', 'Cards'], ['budgets', 'Budgets'], ['goals', 'Goals']])}<span class="spacer"></span>${tab !== 'goals' ? nav : ''}</div>`;
+  return head + { overview: finOverview, transactions: finTransactions, cards: finCards, budgets: finBudgets, goals: finGoals, sheet: finTransactions }[tab]();
 };
 
 function finOverview() {
@@ -1650,9 +1660,9 @@ function finOverview() {
 function finTransactions() {
   const sheets = usingSheets();
   const all = filteredExpenses();
-  const list = all
+  const list = sortTx(all
     .filter(x => !UI.txType || x.type === UI.txType)
-    .filter(x => !UI.txCat || x.category === UI.txCat);
+    .filter(x => !UI.txCat || x.category === UI.txCat));
   const inc = sum(list.filter(x => x.type === 'Income'), x => x.amount);
   const exp = sum(list.filter(x => x.type === 'Expense'), x => x.amount);
   const cats = [...new Set(expenseUniverse().map(x => x.category).filter(Boolean))].sort();
@@ -1676,6 +1686,7 @@ function finTransactions() {
     : months.length ? `<select class="select" data-bind="finMonth" aria-label="Month">${months.map(m => `<option value="${m}"${UI.finMonth === m ? ' selected' : ''}>${monthLabel(m, true)}</option>`).join('')}</select>` : ''}
     ${segBtns('txType', [['', 'All'], ['Income', 'Income'], ['Expense', 'Expenses']])}
     <select class="select" data-bind="txCat" aria-label="Category"><option value="">All categories</option>${cats.map(c => `<option${UI.txCat === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+    <select class="select" data-bind="txSort" aria-label="Sort by">${TX_SORTS.map(([v, l]) => `<option value="${v}"${(UI.txSort || 'date') === v ? ' selected' : ''}>Sort: ${l}</option>`).join('')}</select>
     <span class="spacer"></span>
     <span class="hint">${esc(rangeLabel())} · ${plural(list.length, 'row')}${sheets ? ' · live from your sheet' : ''}</span>
   </div>`;
@@ -1685,17 +1696,10 @@ function finTransactions() {
       `No ${sheets ? 'sheet rows' : 'transactions'} between ${fmtDate(rangeBounds()[0])} and ${fmtDate(rangeBounds()[1])}.`,
       `<button class="btn btn-primary" data-act="${sheets ? 'sheetAdd' : 'add'}" data-kind="expense" data-type="transactions">${icon('plus', 15)} Add one</button>`)}</div>`;
   }
-  return filters + `
+  return filters + categoryChart(list) + `
   <div class="card table-card"><div class="table-wrap"><table class="tbl">
     <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>${sheets ? 'Method' : 'Account'}</th><th class="r">Amount</th><th></th></tr></thead>
-    <tbody>${list.map(x => `<tr data-act="${x.source === 'sheet' ? 'sheetEdit' : 'edit'}" data-kind="expense" data-type="transactions" data-id="${esc(x.id)}">
-      <td class="mono muted">${esc(x.date ? fmtDate(x.date, { day: 'numeric', month: 'short', year: '2-digit' }) : '—')}</td>
-      <td><div class="tx-desc"><span class="tx-ico ${x.type}">${icon(x.type === 'Income' ? 'arrowDown' : 'arrowUp', 15)}</span>${esc(x.description)}${x.pending ? ' <span class="chip amber">saving</span>' : ''}</div></td>
-      <td>${x.category ? `<span class="chip ${x.type === 'Income' ? 'blue' : ''}">${esc(x.category)}</span>` : ''}</td>
-      <td class="muted">${esc(x.account || '')}${x.tab ? ` <span class="hint">· ${esc(x.tab)}</span>` : ''}</td>
-      <td class="r amt ${x.type}">${x.type === 'Income' ? '+' : '−'}${money(num(x.amount), 2)}</td>
-      <td class="r" style="width:44px"><div class="hover-actions"><button class="icon-btn" data-act="${x.source === 'sheet' ? 'sheetEdit' : 'edit'}" data-kind="expense" data-type="transactions" data-id="${esc(x.id)}" aria-label="Edit">${icon('edit', 15)}</button></div></td>
-    </tr>`).join('')}</tbody>
+    <tbody>${txRows(list)}</tbody>
     <tfoot><tr><td colspan="4">${plural(list.length, 'row')} · <span class="txt-blue">${money(inc, 2)} in</span> · ${money(exp, 2)} out</td><td class="r amt ${inc - exp < 0 ? 'txt-red' : ''}">${money(inc - exp, 2, true)}</td><td></td></tr></tfoot>
   </table></div></div>`;
 }
@@ -2218,7 +2222,7 @@ const POLL_MS = 15000;      // change-probe interval while the tab is visible
 
 const Sheets = {
   cfg: { url: '', secret: '', auto: true, lastSync: 0 },
-  data: { fuel: [], service: [], expenses: [], meta: null },
+  data: { fuel: [], service: [], expenses: [], cards: [], meta: null },
   out: { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [] },
   stamp: { car: 0, expenses: 0 },
   status: 'off', message: 'Not connected', busy: false, applying: false, timer: null, poll: null,
@@ -2339,9 +2343,9 @@ const Sheets = {
 
       if (out.stamp) this.stamp = out.stamp;
       const d = out.data || {};
-      const before = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses]);
-      this.data = { fuel: d.fuel || [], service: d.service || [], expenses: d.expenses || [], meta: d.meta || null };
-      const sheetChanged = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses]) !== before;
+      const before = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards]);
+      this.data = { fuel: d.fuel || [], service: d.service || [], expenses: d.expenses || [], cards: d.cards || [], meta: d.meta || null };
+      const sheetChanged = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards]) !== before;
 
       // merge the Second Brain database using the same engine the gist sync uses
       let brainChanged = false;
@@ -2746,6 +2750,87 @@ function sheetFormHint(kind, item, vals) {
 }
 
 /* =========================================================
+   CREDIT CARDS — one sheet tab per card, charges summing to the debt.
+   Card charges are deliberately NOT expenses: the payment is what gets
+   copied into a month tab, so counting both would double up.
+   ========================================================= */
+const cardList = () => (Sheets.data.cards || []).filter(c => c && c.name);
+const cardDebtTotal = cur => sum(cardList().filter(c => (c.currency || 'AED') === (cur || 'AED')), c => c.debt);
+const cardCurrencies = () => [...new Set(cardList().map(c => c.currency || 'AED'))];
+const curMoney = (v, cur) => (cur || 'AED') + ' ' + num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/* =========================================================
+   SORTING & GROUPING for the transactions list
+   ========================================================= */
+function sortTx(list) {
+  const copy = [...list];
+  switch (UI.txSort || 'date') {
+    case 'amount': return copy.sort((a, b) => num(b.amount) - num(a.amount));
+    case 'oldest': return copy.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    case 'category': return copy.sort((a, b) =>
+      String(a.category || 'Uncategorised').localeCompare(String(b.category || 'Uncategorised')) ||
+      num(b.amount) - num(a.amount));
+    default: return copy.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+}
+const groupedByCategory = () => (UI.txSort || 'date') === 'category';
+
+/** [category, rows, spend] biggest spend first; income is excluded from the spend. */
+function byCategory(list) {
+  const map = new Map();
+  list.forEach(x => {
+    const k = x.category || 'Uncategorised';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(x);
+  });
+  return [...map.entries()]
+    .map(([k, rows]) => [k, rows, sum(rows.filter(r => r.type !== 'Income'), r => r.amount)])
+    .sort((a, b) => b[2] - a[2]);
+}
+
+const TX_SORTS = [['date', 'Newest first'], ['oldest', 'Oldest first'], ['amount', 'Largest amount'], ['category', 'Category (grouped)']];
+/** One transaction row; grouping inserts category headings between them. */
+function txRow(x) {
+  return `<tr data-act="${x.source === 'sheet' ? 'sheetEdit' : 'edit'}" data-kind="expense" data-type="transactions" data-id="${esc(x.id)}">
+      <td class="mono muted">${esc(x.date ? fmtDate(x.date, { day: 'numeric', month: 'short', year: '2-digit' }) : '—')}</td>
+      <td><div class="tx-desc"><span class="tx-ico ${x.type}">${icon(x.type === 'Income' ? 'arrowDown' : 'arrowUp', 15)}</span>${esc(x.description)}${x.pending ? ' <span class="chip amber">saving</span>' : ''}</div></td>
+      <td>${x.category ? `<span class="chip ${x.type === 'Income' ? 'blue' : ''}">${esc(x.category)}</span>` : ''}</td>
+      <td class="muted">${esc(x.account || '')}${x.tab ? ` <span class="hint">· ${esc(x.tab)}</span>` : ''}</td>
+      <td class="r amt ${x.type}">${x.type === 'Income' ? '+' : '−'}${money(num(x.amount), 2)}</td>
+      <td class="r" style="width:44px"><div class="hover-actions"><button class="icon-btn" data-act="${x.source === 'sheet' ? 'sheetEdit' : 'edit'}" data-kind="expense" data-type="transactions" data-id="${esc(x.id)}" aria-label="Edit">${icon('edit', 15)}</button></div></td>
+    </tr>`;
+}
+
+/** Sorted rows, with a subtotal heading per category when grouping is on. */
+function txRows(list) {
+  if (!groupedByCategory()) return list.map(txRow).join('');
+  const total = sum(list.filter(x => x.type !== 'Income'), x => x.amount) || 1;
+  return byCategory(list).map(([cat, rows, spend]) =>
+    `<tr class="grp"><td colspan="6"><span>${esc(cat)}</span><b>${money(spend)} · ${Math.round(spend / total * 100)}% · ${plural(rows.length, 'row')}</b></td></tr>`
+    + rows.map(txRow).join('')
+  ).join('');
+}
+
+
+/** Spending by category for whatever range is on screen. */
+function categoryChart(list) {
+  const groups = byCategory(list.filter(x => x.type !== 'Income')).filter(g => g[2] > 0);
+  if (!groups.length) return '';
+  const total = sum(groups, g => g[2]);
+  const shown = groups.slice(0, 9);
+  const rest = groups.slice(9);
+  if (rest.length) shown.push([`${rest.length} more categories`, [], sum(rest, g => g[2])]);
+  const top = shown[0][2] || 1;
+  return `<div class="card" style="margin-bottom:16px">
+    ${cardHead('pie', `Spending by category · ${esc(rangeLabel())}`, `<span class="hint">${money(total)}</span>`)}
+    ${shown.map(([name, , amt], i) => `<div style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px;margin-bottom:6px"><span>${esc(name)}</span><span class="mono hint">${money(amt)} · ${Math.round(amt / total * 100)}%</span></div>
+      <div class="bar"><i style="width:${Math.max(2, amt / top * 100)}%;background:${CAT_COLORS[i % CAT_COLORS.length]};box-shadow:none"></i></div>
+    </div>`).join('')}
+  </div>`;
+}
+
+/* =========================================================
    17b. CAR MAINTENANCE — data lives in the "Hyundai Elantra" Google Sheet
    ========================================================= */
 const sheetOffState = (what) => `<div class="card">${emptyState('sheet', 'Google Sheets not connected',
@@ -2851,6 +2936,53 @@ function carService() {
       </tr>`).join('')}</tbody>
     </table></div>
   </div>`;
+}
+
+
+/** Finances → Cards: one tab per credit card, its charges adding up to the debt. */
+function finCards() {
+  if (!Sheets.connected()) return sheetOffState('your credit cards');
+  const cards = [...cardList()].sort((a, b) => num(b.debt) - num(a.debt));
+  if (!cards.length) {
+    return `<div class="card">${emptyState('wallet', 'No credit-card tabs found',
+      'A tab counts as a card when it holds a charges table and has no month in its name — like “ADCB Visa”. It needs a name column and an amount column.',
+      `<button class="btn btn-ghost" data-act="sheetSync">${icon('sparkle', 15)} Sync now</button>`)}</div>`;
+  }
+  const openCharges = sum(cards, c => c.unpaid);
+  return `
+  <section class="stats stagger" style="margin-bottom:16px">
+    ${cardCurrencies().map(cur => `<div class="card stat">
+      <div class="label"><span class="ico">${icon('wallet', 16)}</span>Owed · ${esc(cur)}</div>
+      <div class="value txt-red">${curMoney(cardDebtTotal(cur), cur)}</div>
+      <div class="sub">${plural(cards.filter(c => (c.currency || 'AED') === cur).length, 'card')}</div>
+    </div>`).join('')}
+    <div class="card stat">
+      <div class="label"><span class="ico">${icon('layers', 16)}</span>Open charges</div>
+      <div class="value">${openCharges}</div>
+      <div class="sub">across ${plural(cards.length, 'card')}</div>
+    </div>
+  </section>
+  <div class="grid-cards" style="grid-template-columns:repeat(auto-fill,minmax(min(440px,100%),1fr))">
+    ${cards.map(c => {
+      const rows = [...(c.rows || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      return `<article class="card table-card" style="padding:18px 0 0">
+        <div style="padding:0 18px">
+          <div class="card-head"><div class="card-title">${icon('wallet', 16)}${esc(c.name)}</div>
+            <span class="chip ${num(c.debt) > 0 ? 'red' : 'green'}">${curMoney(c.debt, c.currency)}</span></div>
+          <p class="hint" style="margin:-8px 0 12px">${plural(c.unpaid, 'open charge')}${c.charges !== c.unpaid ? ` · ${c.charges - c.unpaid} paid` : ''}${c.lastDate ? ` · last ${fmtDate(c.lastDate)}` : ''}</p>
+        </div>
+        ${rows.length ? `<div class="table-wrap"><table class="tbl">
+          <thead><tr><th>Date</th><th>Charge</th><th class="r">Amount</th></tr></thead>
+          <tbody>${rows.map(r => `<tr${r.paid ? ' class="paid"' : ''}>
+            <td class="mono muted">${esc(r.date ? fmtDate(r.date, { day: 'numeric', month: 'short' }) : '—')}</td>
+            <td>${esc(r.name)}${r.paid ? ' <span class="chip green">paid</span>' : ''}${r.category ? ` <span class="hint">· ${esc(r.category)}</span>` : ''}</td>
+            <td class="r mono">${curMoney(r.amount, c.currency)}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : `<div style="padding:0 18px 18px"><p class="hint">No charges listed on this tab.</p></div>`}
+      </article>`;
+    }).join('')}
+  </div>
+  <p class="hint" style="margin-top:14px">Charges on a card tab stay out of your expense totals — the payment you copy into a month tab is what counts as the expense.</p>`;
 }
 
 /** Finances → Google Sheet tab: the live expense rows from the Expenses workbook. */
