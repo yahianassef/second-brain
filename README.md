@@ -27,8 +27,13 @@ add on one device shows up on the others.
   Every monthly tab of the expenses workbook is read as history; the dashboard always shows the
   month you are in, and the range picker (this month / 3 months / year / all time) reaches back
   through every tab
-- **Cards** — one page per credit card, its charges adding up to what is currently owed
-- **Car Maintenance** — **Fuel** and **Service** pages, live from your car spreadsheet
+- **Cards** — a rail of card tiles: pick one (or **All cards**) and flip between them with the ‹ › buttons,
+  the **← →** keys, or a **swipe** on the phone. Each card shows what is owed, the credit available
+  (read from the tab's own *Current Credit Available* cell), how much of the line is in use, its open
+  charges by category, and every charge filterable by **All / Open / Paid**. The last card viewed is remembered.
+- **Car Maintenance** — **Fuel** and **Service** pages, live from your car spreadsheet. Fuel and service can
+  sit on separate tabs or be stacked on one; each table is found by its header row, so a service log on its
+  own tab is read, and new entries are written back to the tab they belong on.
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
 - **Courses** — lessons completed, progress, deadlines, resources
 - **Notes** — categories, tags, pinning, markdown-ish formatting

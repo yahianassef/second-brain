@@ -584,6 +584,27 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 @media (hover:none){
   .hover-actions,.task .actions{opacity:1}
 }
+
+/* Credit-card switcher */
+.cc-rail{display:flex;gap:14px;overflow-x:auto;padding:6px 2px 16px;margin:0 0 6px;scroll-snap-type:x proximity;scrollbar-width:thin}
+.cc-tile{flex:0 0 250px;scroll-snap-align:start;height:148px;border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;justify-content:space-between;text-align:left;color:#fff;background:var(--cc,linear-gradient(135deg,#1B2130,#10141C));border:1px solid rgba(255,255,255,.08);position:relative;overflow:hidden;cursor:pointer;opacity:.6;transition:transform .22s var(--ease),box-shadow .22s,opacity .22s,border-color .22s;box-shadow:0 12px 28px -20px rgba(0,0,0,.9)}
+.cc-tile::after{content:'';position:absolute;right:-50px;top:-70px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.17),transparent 65%);pointer-events:none}
+.cc-tile:hover{opacity:.88;transform:translateY(-2px)}
+.cc-tile.on{opacity:1;transform:translateY(-3px);border-color:rgba(255,255,255,.4);box-shadow:0 18px 38px -16px rgba(0,120,255,.7),0 0 0 2px var(--blue-2)}
+.cc-tile:focus-visible{outline:2px solid var(--blue-2);outline-offset:3px}
+.cc-all{background:linear-gradient(135deg,#1F2738,#0E121A)}
+.cc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;position:relative;z-index:1}
+.cc-name{font-weight:650;font-size:14px;letter-spacing:-.01em;line-height:1.25}
+.cc-chip{width:32px;height:23px;border-radius:5px;flex-shrink:0;background:linear-gradient(135deg,#F7DD93,#C79F45);box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+.cc-owed{font-size:22px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;position:relative;z-index:1}
+.cc-sub{font-size:11.5px;opacity:.82;position:relative;z-index:1}
+.cc-detail{animation:ccIn .28s var(--ease)}
+@keyframes ccIn{from{opacity:0;transform:translateY(8px)}}
+.tbl tr.paid td{opacity:.5}
+.cc-row{display:flex;align-items:center;gap:14px;padding:12px 10px;border-radius:12px;cursor:pointer;transition:background .15s}
+.cc-row:hover{background:var(--surface-2)}
+.cc-row .grow{flex:1;min-width:0}
+.cc-swatch{width:46px;height:31px;border-radius:7px;flex-shrink:0;background:var(--cc);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
 </style>
 </head>
 <body>
@@ -2760,6 +2781,82 @@ const cardCurrencies = () => [...new Set(cardList().map(c => c.currency || 'AED'
 const curMoney = (v, cur) => (cur || 'AED') + ' ' + num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /* =========================================================
+   CREDIT-CARD SWITCHER — one card in focus, flip between them
+   ========================================================= */
+const CARD_PREF = 'secondBrain.finCard';
+const sortedCards = () => [...cardList()].sort((a, b) => num(b.debt) - num(a.debt) || String(a.name).localeCompare(String(b.name)));
+/** The card in focus ('' = All cards). Restored lazily so it works before UI exists. */
+function selectedCardName() {
+  if (UI.finCard === undefined) {
+    try { UI.finCard = localStorage.getItem(CARD_PREF) || ''; } catch (e) { UI.finCard = ''; }
+  }
+  return sortedCards().some(c => c.name === UI.finCard) ? UI.finCard : '';
+}
+function pickCard(name) {
+  UI.finCard = name || '';
+  try { localStorage.setItem(CARD_PREF, UI.finCard); } catch (e) { /* ignore */ }
+  render();
+  // keep the chosen tile in view without jolting the page vertically
+  requestAnimationFrame(() => {
+    const tile = document.querySelector('.cc-tile.on');
+    if (tile && tile.parentElement) tile.parentElement.scrollTo({ left: Math.max(0, tile.offsetLeft - 16), behavior: 'smooth' });
+  });
+}
+function cycleCard(dir) {
+  const names = ['', ...sortedCards().map(c => c.name)];
+  const i = names.indexOf(selectedCardName());
+  pickCard(names[(i + dir + names.length) % names.length]);
+}
+/** A steady colour per card, kept inside the app's blue family. */
+function cardGradient(name) {
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  const hue = 196 + (h % 52);
+  return `linear-gradient(135deg, hsl(${hue} 88% 44%) 0%, hsl(${hue + 18} 78% 26%) 62%, hsl(${hue + 30} 70% 16%) 100%)`;
+}
+/** Share of the (owed + available) line in use, or null when the tab has no figure. */
+function cardUsage(c) {
+  if (c.available === null || c.available === undefined) return null;
+  const line = num(c.debt) + num(c.available);
+  return line > 0 ? Math.min(100, num(c.debt) / line * 100) : 0;
+}
+function cardCategories(c) {
+  const cats = {};
+  (c.rows || []).filter(r => !r.paid).forEach(r => { const k = r.category || 'Uncategorised'; cats[k] = (cats[k] || 0) + num(r.amount); });
+  return Object.entries(cats).sort((a, b) => b[1] - a[1]);
+}
+function cardRail(cards, selected) {
+  const allOwed = cardCurrencies().map(cur => curMoney(cardDebtTotal(cur), cur)).join(' · ');
+  return `<div class="cc-rail" role="tablist" aria-label="Credit cards">
+    <button class="cc-tile cc-all${!selected ? ' on' : ''}" role="tab" aria-selected="${!selected}" data-act="pickCard" data-val="">
+      <span class="cc-top"><span class="cc-name">All cards</span>${icon('layers', 17)}</span>
+      <span class="cc-owed">${allOwed}</span>
+      <span class="cc-sub">${plural(cards.length, 'card')} · ${sum(cards, c => c.unpaid)} open</span>
+    </button>
+    ${cards.map(c => `<button class="cc-tile${selected === c.name ? ' on' : ''}" role="tab" aria-selected="${selected === c.name}" data-act="pickCard" data-val="${esc(c.name)}" style="--cc:${cardGradient(c.name)}">
+      <span class="cc-top"><span class="cc-name">${esc(c.name)}</span><span class="cc-chip"></span></span>
+      <span class="cc-owed">${curMoney(c.debt, c.currency)}</span>
+      <span class="cc-sub">${plural(c.unpaid, 'open charge')}${c.available !== null && c.available !== undefined ? ` · ${curMoney(c.available, c.currency)} free` : ''}</span>
+    </button>`).join('')}
+  </div>`;
+}
+// swipe the focused card left/right on touch screens
+(function () {
+  let sx = 0, sy = 0, tracking = false;
+  document.addEventListener('touchstart', e => {
+    tracking = !!(e.target.closest && e.target.closest('.cc-detail'));
+    if (tracking) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 45) cycleCard(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
+
+/* =========================================================
    SORTING & GROUPING for the transactions list
    ========================================================= */
 function sortTx(list) {
@@ -2942,47 +3039,93 @@ function carService() {
 /** Finances → Cards: one tab per credit card, its charges adding up to the debt. */
 function finCards() {
   if (!Sheets.connected()) return sheetOffState('your credit cards');
-  const cards = [...cardList()].sort((a, b) => num(b.debt) - num(a.debt));
+  const cards = sortedCards();
   if (!cards.length) {
     return `<div class="card">${emptyState('wallet', 'No credit-card tabs found',
       'A tab counts as a card when it holds a charges table and has no month in its name — like “ADCB Visa”. It needs a name column and an amount column.',
       `<button class="btn btn-ghost" data-act="sheetSync">${icon('sparkle', 15)} Sync now</button>`)}</div>`;
   }
-  const openCharges = sum(cards, c => c.unpaid);
+  const selected = selectedCardName();
+  const card = cards.find(c => c.name === selected);
+  const pos = card ? cards.indexOf(card) + 1 : 0;
   return `
-  <section class="stats stagger" style="margin-bottom:16px">
-    ${cardCurrencies().map(cur => `<div class="card stat">
-      <div class="label"><span class="ico">${icon('wallet', 16)}</span>Owed · ${esc(cur)}</div>
-      <div class="value txt-red">${curMoney(cardDebtTotal(cur), cur)}</div>
-      <div class="sub">${plural(cards.filter(c => (c.currency || 'AED') === cur).length, 'card')}</div>
-    </div>`).join('')}
-    <div class="card stat">
-      <div class="label"><span class="ico">${icon('layers', 16)}</span>Open charges</div>
-      <div class="value">${openCharges}</div>
-      <div class="sub">across ${plural(cards.length, 'card')}</div>
-    </div>
-  </section>
-  <div class="grid-cards" style="grid-template-columns:repeat(auto-fill,minmax(min(440px,100%),1fr))">
-    ${cards.map(c => {
-      const rows = [...(c.rows || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
-      return `<article class="card table-card" style="padding:18px 0 0">
-        <div style="padding:0 18px">
-          <div class="card-head"><div class="card-title">${icon('wallet', 16)}${esc(c.name)}</div>
-            <span class="chip ${num(c.debt) > 0 ? 'red' : 'green'}">${curMoney(c.debt, c.currency)}</span></div>
-          <p class="hint" style="margin:-8px 0 12px">${plural(c.unpaid, 'open charge')}${c.charges !== c.unpaid ? ` · ${c.charges - c.unpaid} paid` : ''}${c.lastDate ? ` · last ${fmtDate(c.lastDate)}` : ''}</p>
-        </div>
+  <div class="toolbar">
+    <span class="hint">${card ? `Card ${pos} of ${cards.length}` : `${plural(cards.length, 'card')}`} · click a card or use <span class="kbd">←</span> <span class="kbd">→</span></span>
+    <span class="spacer"></span>
+    <button class="icon-btn" data-act="cycleCard" data-val="-1" title="Previous card (←)" aria-label="Previous card">${icon('chevL', 18)}</button>
+    <button class="icon-btn" data-act="cycleCard" data-val="1" title="Next card (→)" aria-label="Next card">${icon('chevR', 18)}</button>
+    <button class="btn btn-ghost" data-act="sheetSync">${icon('sparkle', 15)} Sync</button>
+  </div>
+  ${cardRail(cards, selected)}
+  ${card ? cardDetailDesk(card) : cardsOverviewDesk(cards)}
+  <p class="hint" style="margin-top:14px">Charges on a card tab stay out of your expense totals — the payment you copy into a month tab is what counts as the expense.</p>`;
+}
+
+function cardDetailDesk(c) {
+  if (!UI.cardRows) UI.cardRows = 'all';
+  const all = [...(c.rows || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const open = all.filter(r => !r.paid), paid = all.filter(r => r.paid);
+  const rows = UI.cardRows === 'open' ? open : UI.cardRows === 'paid' ? paid : all;
+  const usage = cardUsage(c);
+  const cats = cardCategories(c);
+  const stat = (ic, label, value, sub, cls = '') => `<div class="card stat"><div class="label"><span class="ico">${icon(ic, 16)}</span>${label}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></div>`;
+  return `<div class="cc-detail">
+    <section class="stats" style="margin-bottom:16px">
+      ${stat('wallet', 'Owed', curMoney(c.debt, c.currency), `${plural(open.length, 'open charge')}`, num(c.debt) > 0 ? 'txt-red' : 'txt-green')}
+      ${stat('target', 'Available', c.available !== null && c.available !== undefined ? curMoney(c.available, c.currency) : '—',
+        c.available !== null && c.available !== undefined ? 'from the tab’s “Credit Available”' : 'not recorded on this tab')}
+      ${stat('layers', 'Charges', all.length, paid.length ? `${paid.length} paid` : 'none marked paid')}
+      ${stat('clock', 'Last charge', c.lastDate ? fmtDate(c.lastDate, { day: 'numeric', month: 'short' }) : '—', c.lastDate ? ago(c.lastDate) : '')}
+    </section>
+    ${usage !== null ? `<div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px"><span class="muted">Credit in use</span><b class="mono">${Math.round(usage)}%</b></div>
+      <div class="bar lg ${usage >= 90 ? 'red' : usage >= 70 ? 'amber' : ''}"><i style="width:${usage}%"></i></div>
+      <div class="hint" style="margin-top:8px">${curMoney(c.debt, c.currency)} owed of about ${curMoney(num(c.debt) + num(c.available), c.currency)}</div>
+    </div>` : ''}
+    <div class="dash-grid" style="margin-top:0">
+      <div class="card span-8 table-card">
+        <div style="padding:16px 18px 0">${cardHead('wallet', esc(c.name), segBtns('cardRows', [['all', 'All', all.length], ['open', 'Open', open.length], ['paid', 'Paid', paid.length]]))}</div>
         ${rows.length ? `<div class="table-wrap"><table class="tbl">
-          <thead><tr><th>Date</th><th>Charge</th><th class="r">Amount</th></tr></thead>
+          <thead><tr><th>Date</th><th>Charge</th><th>Category</th><th class="r">Amount</th></tr></thead>
           <tbody>${rows.map(r => `<tr${r.paid ? ' class="paid"' : ''}>
-            <td class="mono muted">${esc(r.date ? fmtDate(r.date, { day: 'numeric', month: 'short' }) : '—')}</td>
-            <td>${esc(r.name)}${r.paid ? ' <span class="chip green">paid</span>' : ''}${r.category ? ` <span class="hint">· ${esc(r.category)}</span>` : ''}</td>
+            <td class="mono muted">${esc(r.date ? fmtDate(r.date, { day: 'numeric', month: 'short', year: '2-digit' }) : '—')}</td>
+            <td>${esc(r.name)}${r.paid ? ' <span class="chip green">paid</span>' : ''}</td>
+            <td>${r.category ? `<span class="chip">${esc(r.category)}</span>` : ''}</td>
             <td class="r mono">${curMoney(r.amount, c.currency)}</td>
           </tr>`).join('')}</tbody>
-        </table></div>` : `<div style="padding:0 18px 18px"><p class="hint">No charges listed on this tab.</p></div>`}
-      </article>`;
-    }).join('')}
-  </div>
-  <p class="hint" style="margin-top:14px">Charges on a card tab stay out of your expense totals — the payment you copy into a month tab is what counts as the expense.</p>`;
+          <tfoot><tr><td colspan="3">${plural(rows.length, 'charge')}</td><td class="r mono">${curMoney(sum(rows, r => r.amount), c.currency)}</td></tr></tfoot>
+        </table></div>` : `<div style="padding:0 18px 18px">${emptyState('check', UI.cardRows === 'paid' ? 'Nothing marked paid' : 'No open charges', 'Switch the filter above to see the rest.')}</div>`}
+      </div>
+      <div class="card span-4">
+        ${cardHead('pie', 'Open charges by category')}
+        ${cats.length ? cats.slice(0, 7).map(([k, v], i) => `<div class="cat-bar"><div class="top"><span>${esc(k)}</span><span>${curMoney(v, c.currency)}</span></div><div class="bar"><i style="width:${v / cats[0][1] * 100}%;background:${CAT_COLORS[i]};box-shadow:none"></i></div></div>`).join('')
+          : '<p class="hint">Nothing open on this card.</p>'}
+      </div>
+    </div>
+  </div>`;
+}
+
+function cardsOverviewDesk(cards) {
+  const max = Math.max(1, ...cards.map(c => num(c.debt)));
+  return `<div class="cc-detail">
+    <section class="stats" style="margin-bottom:16px">
+      ${cardCurrencies().map(cur => `<div class="card stat"><div class="label"><span class="ico">${icon('wallet', 16)}</span>Owed · ${esc(cur)}</div>
+        <div class="value txt-red">${curMoney(cardDebtTotal(cur), cur)}</div><div class="sub">${plural(cards.filter(c => (c.currency || 'AED') === cur).length, 'card')}</div></div>`).join('')}
+      <div class="card stat"><div class="label"><span class="ico">${icon('layers', 16)}</span>Open charges</div><div class="value">${sum(cards, c => c.unpaid)}</div><div class="sub">across ${plural(cards.length, 'card')}</div></div>
+    </section>
+    <div class="card">
+      ${cardHead('wallet', 'Compare cards', '<span class="hint">click one to open it</span>')}
+      ${cards.map(c => `<div class="cc-row" data-act="pickCard" data-val="${esc(c.name)}" style="--cc:${cardGradient(c.name)}">
+        <span class="cc-swatch"></span>
+        <div class="grow">
+          <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:6px"><b>${esc(c.name)}</b><b class="mono ${num(c.debt) > 0 ? 'txt-red' : 'txt-green'}">${curMoney(c.debt, c.currency)}</b></div>
+          <div class="bar"><i style="width:${num(c.debt) / max * 100}%"></i></div>
+          <div class="hint" style="margin-top:6px">${plural(c.unpaid, 'open charge')}${c.available !== null && c.available !== undefined ? ` · ${curMoney(c.available, c.currency)} available` : ''}${c.lastDate ? ` · last ${fmtDate(c.lastDate)}` : ''}</div>
+        </div>
+        ${icon('chevR', 18)}
+      </div>`).join('')}
+    </div>
+  </div>`;
 }
 
 /** Finances → Google Sheet tab: the live expense rows from the Expenses workbook. */
@@ -3040,6 +3183,8 @@ const ACTIONS = {
     if (el.dataset.key === 'captureType') $('#captureInput')?.focus();
   },
   finTab: el => { UI.finTab = el.dataset.val; go('finances'); },
+  pickCard: el => pickCard(el.dataset.val),
+  cycleCard: el => cycleCard(Number(el.dataset.val)),
   month: el => { UI.finMonth = shiftMonth(UI.finMonth, Number(el.dataset.val)); UI.txAll = false; render(); },
   thisMonth: () => { UI.finMonth = today().slice(0, 7); render(); },
   toggleAll: () => { UI.txAll = !UI.txAll; render(); },
@@ -3377,6 +3522,9 @@ function wireShell() {
       $('#newMenu').classList.remove('open'); toggleSidebar(false); return;
     }
     if (typing || modalOpen || e.ctrlKey || e.metaKey) return;
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && UI.view === 'finances' && UI.finTab === 'cards') {
+      e.preventDefault(); cycleCard(e.key === 'ArrowRight' ? 1 : -1); return;
+    }
     if (e.key === '/') { e.preventDefault(); $('#searchInput').focus(); }
     else if (e.key.toLowerCase() === 'n' && !e.altKey) { e.preventDefault(); const t = currentAddType(); t ? openForm(t) : openNewMenu(); }
     else if (e.altKey && /^[1-7]$/.test(e.key)) { e.preventDefault(); go(Object.keys(VIEWS)[+e.key - 1]); }

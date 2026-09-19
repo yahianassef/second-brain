@@ -116,7 +116,19 @@ const draft = makeSheet('Draft', [['Expense Name', '', 'Category'], ['Draft row'
 const financesSheet = makeSheet('Finances Sheet', [['Expense Name', '', 'Category'], ['Legacy row', 77, 'z']]);
 const brain = makeSheet('SecondBrain_Data', [['Second Brain app data']]);
 
-const car = makeSheet('Hyundai Elantra', [
+// The real car workbook keeps fuel and service on SEPARATE tabs. (An earlier mock
+// stacked both on one tab, which hid a bug where the service tab was never read.)
+const carFuel = makeSheet('Fuel', [
+  ['Odometer Reading', 'Date', 'Cost', 'Difference In Days Between Each'],
+  [228763, D(2026, 9, 3), 150, 6], [229330, D(2026, 9, 11), 160, 8]
+]);
+const carService = makeSheet('Services', [
+  ['Item', 'Cost', 'Date', 'Odometer Reading'],
+  ['Glass', 100, D(2026, 6, 15), '-'],
+  ['Oil And Filter', 176, D(2026, 9, 16), 229700]
+]);
+// the older single-tab layout, both tables stacked — must keep working
+const carStacked = makeSheet('Hyundai Elantra', [
   ['Odometer Reading', 'Date', 'Cost'], [229000, D(2026, 9, 1), 120], [],
   ['Item', 'Cost', 'Date', 'Odometer Reading'], ['Oil change', 300, D(2026, 8, 20), 228500]
 ]);
@@ -124,7 +136,7 @@ const car = makeSheet('Hyundai Elantra', [
 const expensesSS = makeSS('Expenses Sheet Starting November 2025',
   [nov25, brain, aug26, sep26, islamic, touch, tabby, dib, hsbc, calculations, wishlist,
    egyptOld, egypt, draft, egyptCopy, financesSheet]);
-const carSS = makeSS('Hyundai Elantra', [car]);
+const carSS = makeSS('Hyundai Elantra', [carFuel, carService]);
 
 const SpreadsheetApp = { openById: id => (id === 'car' ? carSS : expensesSS) };
 const Session = { getScriptTimeZone: () => 'UTC' };
@@ -138,7 +150,7 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
 (async () => {
   const src = await (await fetch('Code.gs?t=' + Date.now(), { cache: 'no-store' })).text();
   const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService',
-    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName };')
+    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable };')
     (SpreadsheetApp, Session, Utilities, DriveApp, ContentService);
   api.CONFIG.SECRET = '';
   api.CONFIG.CAR_SHEET_ID = 'car';
@@ -207,6 +219,41 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
   const meta = api.pullAll().meta;
   ok('meta lists card tabs and skipped tabs', meta.cardTabs.length === 5 && meta.skippedTabs.length > 0,
      'skipped: ' + meta.skippedTabs.join(', '));
+
+  // ---- car: fuel and service on separate tabs (the real layout) ----
+  const fuel = api.readFuel(), svc = api.readService();
+  ok('fuel read from the Fuel tab', fuel.length === 2 && fuel[1].odometer === 229330, fuel.map(f => f.odometer).join(', '));
+  ok('service read from its own tab', svc.length === 2 && svc[1].item === 'Oil And Filter' && svc[1].cost === 176,
+     svc.map(x => x.item + ' ' + x.cost).join(', ') || '(nothing read)');
+  ok('a "-" odometer reads as 0, not NaN', svc[0] && svc[0].odometer === 0, String(svc[0] && svc[0].odometer));
+  ok('fuel tab is not mistaken for the service tab',
+     api.carSheetFor('fuel').getName() === 'Fuel' && api.carSheetFor('service').getName() === 'Services',
+     api.carSheetFor('fuel').getName() + ' / ' + api.carSheetFor('service').getName());
+  const svcBefore = carService._g.length, fuelBefore = carFuel._g.length;
+  api.addService({ item: 'Tyres', cost: 900, date: '2026-09-18', odometer: 229800 });
+  ok('a new service is written to the Services tab', carService._g.length === svcBefore + 1 && carFuel._g.length === fuelBefore,
+     'services ' + svcBefore + '->' + carService._g.length + ', fuel ' + fuelBefore + '->' + carFuel._g.length);
+  api.addFuel({ odometer: 229900, date: '2026-09-19', cost: 155 });
+  ok('a new fill-up is written to the Fuel tab',
+     carFuel._g.length === fuelBefore + 1 && carFuel._g[carFuel._g.length - 1][0] === 229900 && carService._g.length === svcBefore + 1);
+
+  // ---- car: the older stacked single-tab layout still works ----
+  carSS._sheets = [carStacked];
+  const sf = api.readFuel(), ss2 = api.readService();
+  ok('stacked layout: fuel stops at the service table', sf.length === 1 && sf[0].odometer === 229000, sf.map(f => f.odometer).join(', '));
+  ok('stacked layout: service found under fuel', ss2.length === 1 && ss2[0].item === 'Oil change', ss2.map(x => x.item).join(', '));
+  carSS._sheets = [carFuel, carService];
+
+  // ---- credit available beside each card table ----
+  ok('credit available read beside the label',
+     byName('Tabby').available === 4900 && byName('DIB Credit Card').available === 5000,
+     'Tabby ' + byName('Tabby').available + ', DIB ' + byName('DIB Credit Card').available);
+  ok('credit available read from the shared card header', byName('ADCB Touchpoints Credit Card').available === 3368,
+     String(byName('ADCB Touchpoints Credit Card').available));
+  ok('no label means no figure, not zero', byName('HSBC Credit Card').available === null,
+     String(byName('HSBC Credit Card').available));
+  ok('credit available read from below a column heading',
+     api.creditAvailable([['Payments', 'Amount', 'Credit Available', 'Notes'], ['Google One', 250, 28410, '']]) === 28410);
 
   const failed = R.filter(r => r.startsWith('FAIL')).length;
   document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;

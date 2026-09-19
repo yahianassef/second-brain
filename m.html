@@ -306,6 +306,23 @@ mark{background:rgba(0,168,255,.3);color:#fff;border-radius:3px;padding:0 2px}
   .modal{max-width:560px;margin:0 auto;border-radius:24px;border-bottom:1px solid var(--border-2)}
   .search-wrap{max-width:560px;left:50%;transform:translateX(-50%)}
 }
+
+/* Credit-card switcher */
+.cc-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -14px 12px;padding:4px 14px 10px;scrollbar-width:none}
+.cc-rail::-webkit-scrollbar{display:none}
+.cc-tile{flex:0 0 76%;scroll-snap-align:center;height:150px;border-radius:20px;padding:16px 18px;display:flex;flex-direction:column;justify-content:space-between;text-align:left;color:#fff;background:var(--cc,linear-gradient(135deg,#1B2130,#10141C));border:1px solid rgba(255,255,255,.08);position:relative;overflow:hidden;opacity:.62;transition:transform .22s var(--ease),opacity .22s,box-shadow .22s;box-shadow:0 12px 28px -20px rgba(0,0,0,.9)}
+.cc-tile::after{content:'';position:absolute;right:-50px;top:-70px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.17),transparent 65%);pointer-events:none}
+.cc-tile:active{transform:scale(.97)}
+.cc-tile.on{opacity:1;box-shadow:0 16px 34px -14px rgba(0,120,255,.7),0 0 0 2px var(--blue-2)}
+.cc-all{background:linear-gradient(135deg,#1F2738,#0E121A)}
+.cc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;position:relative;z-index:1}
+.cc-name{font-weight:700;font-size:14.5px;line-height:1.25}
+.cc-chip{width:32px;height:23px;border-radius:5px;flex-shrink:0;background:linear-gradient(135deg,#F7DD93,#C79F45)}
+.cc-owed{font-size:24px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;position:relative;z-index:1}
+.cc-sub{font-size:12px;opacity:.85;position:relative;z-index:1}
+.cc-detail{animation:ccIn .28s var(--ease)}
+@keyframes ccIn{from{opacity:0;transform:translateY(8px)}}
+.cc-swatch{width:42px;height:28px;border-radius:7px;flex-shrink:0;background:var(--cc)}
 </style>
 </head>
 <body>
@@ -1688,6 +1705,82 @@ const cardCurrencies = () => [...new Set(cardList().map(c => c.currency || 'AED'
 const curMoney = (v, cur) => (cur || 'AED') + ' ' + num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /* =========================================================
+   CREDIT-CARD SWITCHER — one card in focus, flip between them
+   ========================================================= */
+const CARD_PREF = 'secondBrain.finCard';
+const sortedCards = () => [...cardList()].sort((a, b) => num(b.debt) - num(a.debt) || String(a.name).localeCompare(String(b.name)));
+/** The card in focus ('' = All cards). Restored lazily so it works before UI exists. */
+function selectedCardName() {
+  if (UI.finCard === undefined) {
+    try { UI.finCard = localStorage.getItem(CARD_PREF) || ''; } catch (e) { UI.finCard = ''; }
+  }
+  return sortedCards().some(c => c.name === UI.finCard) ? UI.finCard : '';
+}
+function pickCard(name) {
+  UI.finCard = name || '';
+  try { localStorage.setItem(CARD_PREF, UI.finCard); } catch (e) { /* ignore */ }
+  render();
+  // keep the chosen tile in view without jolting the page vertically
+  requestAnimationFrame(() => {
+    const tile = document.querySelector('.cc-tile.on');
+    if (tile && tile.parentElement) tile.parentElement.scrollTo({ left: Math.max(0, tile.offsetLeft - 16), behavior: 'smooth' });
+  });
+}
+function cycleCard(dir) {
+  const names = ['', ...sortedCards().map(c => c.name)];
+  const i = names.indexOf(selectedCardName());
+  pickCard(names[(i + dir + names.length) % names.length]);
+}
+/** A steady colour per card, kept inside the app's blue family. */
+function cardGradient(name) {
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  const hue = 196 + (h % 52);
+  return `linear-gradient(135deg, hsl(${hue} 88% 44%) 0%, hsl(${hue + 18} 78% 26%) 62%, hsl(${hue + 30} 70% 16%) 100%)`;
+}
+/** Share of the (owed + available) line in use, or null when the tab has no figure. */
+function cardUsage(c) {
+  if (c.available === null || c.available === undefined) return null;
+  const line = num(c.debt) + num(c.available);
+  return line > 0 ? Math.min(100, num(c.debt) / line * 100) : 0;
+}
+function cardCategories(c) {
+  const cats = {};
+  (c.rows || []).filter(r => !r.paid).forEach(r => { const k = r.category || 'Uncategorised'; cats[k] = (cats[k] || 0) + num(r.amount); });
+  return Object.entries(cats).sort((a, b) => b[1] - a[1]);
+}
+function cardRail(cards, selected) {
+  const allOwed = cardCurrencies().map(cur => curMoney(cardDebtTotal(cur), cur)).join(' · ');
+  return `<div class="cc-rail" role="tablist" aria-label="Credit cards">
+    <button class="cc-tile cc-all${!selected ? ' on' : ''}" role="tab" aria-selected="${!selected}" data-act="pickCard" data-val="">
+      <span class="cc-top"><span class="cc-name">All cards</span>${icon('layers', 17)}</span>
+      <span class="cc-owed">${allOwed}</span>
+      <span class="cc-sub">${plural(cards.length, 'card')} · ${sum(cards, c => c.unpaid)} open</span>
+    </button>
+    ${cards.map(c => `<button class="cc-tile${selected === c.name ? ' on' : ''}" role="tab" aria-selected="${selected === c.name}" data-act="pickCard" data-val="${esc(c.name)}" style="--cc:${cardGradient(c.name)}">
+      <span class="cc-top"><span class="cc-name">${esc(c.name)}</span><span class="cc-chip"></span></span>
+      <span class="cc-owed">${curMoney(c.debt, c.currency)}</span>
+      <span class="cc-sub">${plural(c.unpaid, 'open charge')}${c.available !== null && c.available !== undefined ? ` · ${curMoney(c.available, c.currency)} free` : ''}</span>
+    </button>`).join('')}
+  </div>`;
+}
+// swipe the focused card left/right on touch screens
+(function () {
+  let sx = 0, sy = 0, tracking = false;
+  document.addEventListener('touchstart', e => {
+    tracking = !!(e.target.closest && e.target.closest('.cc-detail'));
+    if (tracking) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 45) cycleCard(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
+
+/* =========================================================
    SORTING & GROUPING for the transactions list
    ========================================================= */
 function sortTx(list) {
@@ -2081,30 +2174,55 @@ SCREENS.money = () => {
 
   if (UI.moneyTab === 'cards') {
     if (!Sheets.connected()) return head + sheetOffCard('your credit cards');
-    const cards = [...cardList()].sort((a, b) => num(b.debt) - num(a.debt));
+    const cards = sortedCards();
     if (!cards.length) {
       return head + `<div class="card">${emptyState('wallet', 'No card tabs found',
         'A tab counts as a card when it has a charges table and no month in its name, like “ADCB Visa”.')}</div>`;
     }
-    return head + cardCurrencies().map(cur => `<div class="card">
-        <div class="row" style="justify-content:space-between"><b style="font-size:15px">Owed · ${esc(cur)}</b>
-        <b class="txt-red" style="font-size:17px">${curMoney(cardDebtTotal(cur), cur)}</b></div></div>`).join('')
-      + cards.map(c => {
-        const rows = [...(c.rows || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
-        return `<div class="card">
-          <div class="row" style="justify-content:space-between;margin-bottom:8px">
-            <b style="font-size:15.5px">${esc(c.name)}</b>
-            <span class="chip ${num(c.debt) > 0 ? 'red' : 'green'}">${curMoney(c.debt, c.currency)}</span>
-          </div>
-          <p class="hint" style="margin-bottom:10px">${plural(c.unpaid, 'open charge')}${c.charges !== c.unpaid ? ` · ${c.charges - c.unpaid} paid` : ''}${c.lastDate ? ` · last ${fmtDate(c.lastDate)}` : ''}</p>
-          <div class="list">${rows.map(r => `<div class="item"${r.paid ? ' style="opacity:.55"' : ''}>
-            <span class="tx-ico Expense">${icon('wallet', 16)}</span>
-            <div class="grow"><div class="t">${esc(r.name)}${r.paid ? ' <span class="chip green">paid</span>' : ''}</div>
-              <div class="s">${esc(r.category || '')}${r.date ? ' · ' + fmtDate(r.date) : ''}</div></div>
-            <span class="amt">${curMoney(r.amount, c.currency)}</span></div>`).join('')}</div>
-        </div>`;
-      }).join('')
-      + `<p class="hint" style="margin-top:4px">Card charges stay out of expense totals — the payment you copy into a month tab is the expense.</p>`;
+    const selected = selectedCardName();
+    const c = cards.find(x => x.name === selected);
+    const nav = `<div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <span class="hint">${c ? `Card ${cards.indexOf(c) + 1} of ${cards.length} · swipe to switch` : `${plural(cards.length, 'card')} · tap one to open`}</span>
+      <span class="row" style="gap:4px"><button class="icon-btn" data-act="cycleCard" data-val="-1" aria-label="Previous card">${icon('chevL', 20)}</button>
+      <button class="icon-btn" data-act="cycleCard" data-val="1" aria-label="Next card">${icon('chevR', 20)}</button></span></div>`;
+
+    if (!c) {
+      const max = Math.max(1, ...cards.map(x => num(x.debt)));
+      return head + cardRail(cards, selected) + nav + `<div class="cc-detail">
+        ${cardCurrencies().map(cur => `<div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:15px">Owed · ${esc(cur)}</b>
+          <b class="txt-red" style="font-size:18px">${curMoney(cardDebtTotal(cur), cur)}</b></div></div>`).join('')}
+        <div class="card"><div class="list">${cards.map(x => `<div class="item" data-act="pickCard" data-val="${esc(x.name)}" style="--cc:${cardGradient(x.name)}">
+          <span class="cc-swatch"></span>
+          <div class="grow"><div class="t">${esc(x.name)}</div>
+            <div class="bar" style="margin:7px 0 5px"><i style="width:${num(x.debt) / max * 100}%"></i></div>
+            <div class="s">${plural(x.unpaid, 'open charge')}${x.available !== null && x.available !== undefined ? ' · ' + curMoney(x.available, x.currency) + ' free' : ''}</div></div>
+          <span class="amt ${num(x.debt) > 0 ? 'txt-red' : 'txt-green'}">${curMoney(x.debt, x.currency)}</span></div>`).join('')}</div></div>
+      </div>`;
+    }
+
+    if (!UI.cardRows) UI.cardRows = 'all';
+    const all = [...(c.rows || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const open = all.filter(r => !r.paid), paid = all.filter(r => r.paid);
+    const rows = UI.cardRows === 'open' ? open : UI.cardRows === 'paid' ? paid : all;
+    const usage = cardUsage(c);
+    const cats = cardCategories(c).slice(0, 4);
+    return head + cardRail(cards, selected) + nav + `<div class="cc-detail">
+      <div class="stat-grid">
+        ${statTile('wallet', 'Owed', curMoney(c.debt, c.currency), plural(open.length, 'open charge'), num(c.debt) > 0 ? 'txt-red' : 'txt-green')}
+        ${statTile('target', 'Available', c.available !== null && c.available !== undefined ? curMoney(c.available, c.currency) : '—', c.available !== null && c.available !== undefined ? 'per the sheet' : 'not on this tab')}
+      </div>
+      ${usage !== null ? `<div class="card"><div class="row" style="justify-content:space-between;font-size:13px;margin-bottom:8px"><span class="hint">Credit in use</span><b class="mono">${Math.round(usage)}%</b></div>
+        <div class="bar ${usage >= 90 ? 'red' : usage >= 70 ? 'amber' : ''}"><i style="width:${usage}%"></i></div></div>` : ''}
+      ${cats.length ? `<div class="card">${cardHead('pie', 'Open by category')}${cats.map(([k, v]) => `<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between;font-size:13.5px;margin-bottom:6px"><span>${esc(k)}</span><span class="mono hint">${curMoney(v, c.currency)}</span></div><div class="bar"><i style="width:${v / cats[0][1] * 100}%"></i></div></div>`).join('')}</div>` : ''}
+      ${seg('cardRows', [['all', 'All', all.length], ['open', 'Open', open.length], ['paid', 'Paid', paid.length]])}
+      <div class="card"><div class="list">${rows.length ? rows.map(r => `<div class="item"${r.paid ? ' style="opacity:.55"' : ''}>
+        <span class="tx-ico Expense">${icon('wallet', 16)}</span>
+        <div class="grow"><div class="t">${esc(r.name)}${r.paid ? ' <span class="chip green">paid</span>' : ''}</div>
+          <div class="s">${esc(r.category || '')}${r.date ? (r.category ? ' · ' : '') + fmtDate(r.date) : ''}</div></div>
+        <span class="amt">${curMoney(r.amount, c.currency)}</span></div>`).join('')
+        : emptyState('check', UI.cardRows === 'paid' ? 'Nothing marked paid' : 'No open charges', 'Switch the filter to see the rest.')}</div></div>
+    </div>
+    <p class="hint" style="margin-top:4px">Card charges stay out of expense totals — the payment you copy into a month tab is the expense.</p>`;
   }
 
   if (UI.moneyTab === 'budgets') {
@@ -2436,6 +2554,8 @@ const ACTIONS = {
   edit: el => { const it = find(el.dataset.type, el.dataset.id); if (it) openForm(el.dataset.type, it); },
   del: el => removeItem(el.dataset.type, el.dataset.id),
   set: el => { UI[el.dataset.key] = el.dataset.val; render(); },
+  pickCard: el => pickCard(el.dataset.val),
+  cycleCard: el => cycleCard(Number(el.dataset.val)),
   month: el => { UI.finMonth = shiftMonth(UI.finMonth, Number(el.dataset.val)); render(); },
   syncPanel: () => Sync.openPanel(),
   sheetsPanel: () => Sheets.openPanel(),

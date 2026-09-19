@@ -42,8 +42,8 @@ var CONFIG = {
 
   // "Hyundai Elantra" — the car log
   CAR_SHEET_ID: 'PASTE_CAR_SHEET_ID_HERE',
-  CAR_FUEL_TAB: '',      // '' = first tab. Set a name if your fuel table moves.
-  CAR_SERVICE_TAB: '',   // '' = same tab as fuel (two tables side by side / stacked)
+  CAR_FUEL_TAB: '',      // '' = found automatically on whichever tab holds it
+  CAR_SERVICE_TAB: '',   // '' = found automatically (its own tab, or stacked under fuel)
 
   // "Expenses Sheet Starting November 2025"
   EXPENSES_SHEET_ID: 'PASTE_EXPENSES_SHEET_ID_HERE',
@@ -103,7 +103,7 @@ function handle(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 6 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 7 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -156,6 +156,32 @@ function pullAll() {
   };
 }
 
+/**
+ * The car tab holding a table. Fuel and service can share one tab (stacked) or
+ * live on separate tabs; either way the tab is found by its header row, so the
+ * service log is never looked for on the fuel tab. A named tab in CONFIG wins.
+ */
+function carSheetFor(kind) {
+  var ss = openCar();
+  var named = kind === 'fuel' ? CONFIG.CAR_FUEL_TAB : CONFIG.CAR_SERVICE_TAB;
+  if (named) {
+    var byName = ss.getSheetByName(named);
+    if (byName) return byName;
+  }
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var grid = gridOf(sheets[i]);
+    if (kind === 'fuel') {
+      var hr = findHeaderRow(grid, ['Odometer Reading', 'Date', 'Cost']);
+      // the service header also has Odometer / Date / Cost — only a header without "Item" is fuel
+      if (hr >= 0 && colIndex(grid, hr, 'Item') < 0) return sheets[i];
+    } else if (findHeaderRow(grid, ['Item', 'Cost', 'Date']) >= 0) {
+      return sheets[i];
+    }
+  }
+  return sheets[0];
+}
+
 function openCar() { applyUserConfig(); return SpreadsheetApp.openById(CONFIG.CAR_SHEET_ID); }
 function openExpenses() { applyUserConfig(); return SpreadsheetApp.openById(CONFIG.EXPENSES_SHEET_ID); }
 
@@ -202,7 +228,7 @@ function asNumber(v) {
 
 /** The fuel table: Odometer Reading | Date | Cost | Difference In Days */
 function readFuel() {
-  var sh = CONFIG.CAR_FUEL_TAB ? openCar().getSheetByName(CONFIG.CAR_FUEL_TAB) : openCar().getSheets()[0];
+  var sh = carSheetFor('fuel');
   var grid = gridOf(sh);
   var hr = findHeaderRow(grid, ['Odometer Reading', 'Date', 'Cost']);
   if (hr < 0) return [];
@@ -229,7 +255,7 @@ function readFuel() {
 
 /** The service table: Item | Cost | Date | Odometer Reading */
 function readService() {
-  var sh = CONFIG.CAR_SERVICE_TAB ? openCar().getSheetByName(CONFIG.CAR_SERVICE_TAB) : openCar().getSheets()[0];
+  var sh = carSheetFor('service');
   var grid = gridOf(sh);
   var hr = findHeaderRow(grid, ['Item', 'Cost', 'Date']);
   if (hr < 0) return [];
@@ -569,6 +595,27 @@ function readExpenses() {
 }
 
 /**
+ * The "Current Credit Available" figure a card tab keeps beside its table:
+ * the first number to the right of that label, else the value just below it.
+ * Returns null when the tab has no such label.
+ */
+function creditAvailable(grid) {
+  var label = /credit\s*ava/i;            // "Credit Available", and the tabs' own "Availabe"
+  var hasDigits = function (v) { return v !== '' && v !== null && /\d/.test(String(v)); };
+  var rows = Math.min(grid.length, 60);
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < grid[r].length; c++) {
+      if (!label.test(String(grid[r][c]))) continue;
+      for (var k = c + 1; k < grid[r].length; k++) {
+        if (hasDigits(grid[r][k])) return Math.round(asNumber(grid[r][k]) * 100) / 100;
+      }
+      if (r + 1 < grid.length && hasDigits(grid[r + 1][c])) return Math.round(asNumber(grid[r + 1][c]) * 100) / 100;
+    }
+  }
+  return null;
+}
+
+/**
  * Every credit-card tab with its charges. The debt is their sum; a row whose
  * payment-status column says paid is left out, and the tab's own total row is
  * skipped so nothing is counted twice.
@@ -600,6 +647,7 @@ function readCards() {
     return {
       name: t.name,
       currency: t.currency,
+      available: creditAvailable(grid),
       debt: Math.round(debt * 100) / 100,
       charges: rows.length,
       unpaid: rows.filter(function (x) { return !x.paid; }).length,
@@ -624,7 +672,7 @@ function appendUnderTable(sheet, headerRow, firstCol, values) {
 }
 
 function addFuel(row) {
-  var sh = CONFIG.CAR_FUEL_TAB ? openCar().getSheetByName(CONFIG.CAR_FUEL_TAB) : openCar().getSheets()[0];
+  var sh = carSheetFor('fuel');
   var grid = gridOf(sh);
   var hr = findHeaderRow(grid, ['Odometer Reading', 'Date', 'Cost']);
   if (hr < 0) throw new Error('Fuel table not found in the car sheet');
@@ -638,7 +686,7 @@ function addFuel(row) {
 }
 
 function addService(row) {
-  var sh = CONFIG.CAR_SERVICE_TAB ? openCar().getSheetByName(CONFIG.CAR_SERVICE_TAB) : openCar().getSheets()[0];
+  var sh = carSheetFor('service');
   var grid = gridOf(sh);
   var hr = findHeaderRow(grid, ['Item', 'Cost', 'Date']);
   if (hr < 0) throw new Error('Service table not found in the car sheet');
@@ -825,8 +873,8 @@ function writeBrain(obj) {
    ============================================================ */
 
 function carSheet(kind) {
-  if (kind === 'fuel') return CONFIG.CAR_FUEL_TAB ? openCar().getSheetByName(CONFIG.CAR_FUEL_TAB) : openCar().getSheets()[0];
-  return CONFIG.CAR_SERVICE_TAB ? openCar().getSheetByName(CONFIG.CAR_SERVICE_TAB) : openCar().getSheets()[0];
+  if (kind === 'fuel') return carSheetFor('fuel');
+  return carSheetFor('service');
 }
 
 /** An expense row number means nothing without its tab, so every edit carries one. */
