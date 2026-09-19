@@ -333,6 +333,36 @@ mark{background:rgba(0,168,255,.3);color:#fff;border-radius:3px;padding:0 2px}
 .pay-pill[disabled]{opacity:.35}
 .item.paid .grow,.item.paid .amt{opacity:.5}
 .charge-end{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+
+/* ---------- trackers: habits, studying, exercising ---------- */
+.cal{display:flex;flex-direction:column;gap:6px}
+.cal-head,.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.cal-head span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);text-align:center;font-weight:600}
+.cal-day{aspect-ratio:1;border-radius:8px;background:var(--surface-3);display:grid;place-items:center;font-family:var(--mono);font-size:11px;color:var(--text-3);border:1px solid transparent}
+.cal-day.pad{background:transparent}
+.cal-day.lit{color:#03101C;font-weight:700}
+.cal-day.today{border-color:var(--blue-2)}
+.cal-day.future{opacity:.35}
+.cal-day.tap:active{transform:scale(.92)}
+.cal.mini{gap:3px}
+.cal.mini .cal-grid{gap:2px}
+.cal.mini .cal-day{border-radius:2px;font-size:0}
+.year-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.year-grid h5{font-size:10.5px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.07em}
+.year-grid .m-sub{font-size:10.5px;color:var(--text-3);font-family:var(--mono);margin-top:5px}
+.heat-legend{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3)}
+.heat-legend i{width:11px;height:11px;border-radius:3px;display:block}
+.week-dots{display:flex;gap:5px}
+.week-dots i{width:16px;height:16px;border-radius:5px;background:var(--surface-3);display:block}
+.week-dots i.on{background:var(--c,var(--blue-2))}
+.week-dots i.now{outline:1px solid var(--blue-2);outline-offset:1.5px}
+.habit-check{width:28px;height:28px;border-radius:9px;border:2px solid #3A4458;display:grid;place-items:center;flex-shrink:0;color:transparent;transition:all .2s}
+.habit-check.on{background:var(--c,var(--blue-2));border-color:transparent;color:#04121F}
+.habit-check:active{transform:scale(.9)}
+.h-dot{width:9px;height:9px;border-radius:50%;background:var(--c,var(--blue-2));flex-shrink:0}
+.day-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 2px 6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--blue-2);font-weight:600;border-bottom:1px solid var(--border)}
+.day-head b{font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:0;text-transform:none}
+.row-gap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -378,7 +408,23 @@ const LISTS = {
   accounts: ['Checking', 'Savings', 'Credit Card', 'Cash'],
   courseStatus: ['Not Started', 'In Progress', 'Paused', 'Completed'],
   noteCats: ['Ideas', 'Reference', 'Work', 'Learning', 'Personal', 'Meeting'],
-  moods: ['Rough', 'Low', 'Okay', 'Good', 'Great'] // mood value = index + 1
+  moods: ['Rough', 'Low', 'Okay', 'Good', 'Great'], // mood value = index + 1
+  habitCats: ['Health', 'Fitness', 'Learning', 'Mind', 'Work', 'Finance', 'Other'],
+  studyKinds: ['Reading', 'Practice', 'Lecture', 'Revision', 'Project', 'Exam prep'],
+  workoutTypes: ['Strength', 'Cardio', 'Mobility', 'Sport', 'Walk', 'Other'],
+  intensity: ['Easy', 'Moderate', 'Hard']
+};
+/* Habit colours — the swatch a habit is drawn in everywhere it appears */
+const HABIT_COLORS = [
+  { v: '#00A8FF', l: 'Blue' }, { v: '#22C55E', l: 'Green' }, { v: '#F5A524', l: 'Amber' },
+  { v: '#8B5CF6', l: 'Violet' }, { v: '#F43F5E', l: 'Rose' }, { v: '#00D1B2', l: 'Teal' }, { v: '#FF8A5B', l: 'Coral' }
+];
+/* Heatmap ramps — index 0 is the lightest shade, 3 the strongest day */
+const HEAT_RAMPS = {
+  blue:   ['#123B5E', '#0F6FB8', '#12A0EE', '#5BC8FF'],
+  green:  ['#14432A', '#17683C', '#28A85D', '#68E39A'],
+  violet: ['#2E2461', '#4B36A8', '#7C56E8', '#B49BFF'],
+  amber:  ['#4A3312', '#8A5B12', '#D18B1E', '#FBBF4E']
 };
 const MOOD_COLORS = ['#F43F5E', '#F5A524', '#7C8AA5', '#3D9BFF', '#00D1FF'];
 const STATUS_TONE = { Planning: 'violet', Active: 'blue', 'On Hold': 'amber', Completed: 'green', 'Not Started': 'slate', 'In Progress': 'blue', Paused: 'amber', 'To Do': 'slate', Done: 'green' };
@@ -389,6 +435,9 @@ const VIEWS = {
   dashboard: { title: 'Dashboard', sub: 'Your life at a glance', icon: 'grid', group: 'Overview' },
   projects:  { title: 'Projects', sub: 'Everything you are building', icon: 'folder', group: 'Productivity', add: 'projects' },
   tasks:     { title: 'Tasks', sub: 'What needs to get done', icon: 'tasks', group: 'Productivity', add: 'tasks' },
+  habits:    { title: 'Habits', sub: 'Small things, done daily', icon: 'repeat', group: 'Routine', add: 'habits' },
+  study:     { title: 'Studying', sub: 'Sessions, hours and streaks', icon: 'bookOpen', group: 'Routine', add: 'study' },
+  exercise:  { title: 'Exercising', sub: 'Workouts, volume and rest days', icon: 'dumbbell', group: 'Routine', add: 'workouts' },
   courses:   { title: 'Courses', sub: 'What you are learning right now', icon: 'cap', group: 'Knowledge', add: 'courses' },
   notes:     { title: 'Notes', sub: 'Ideas, references and knowledge', icon: 'note', group: 'Knowledge', add: 'notes' },
   journal:   { title: 'Journal', sub: 'Reflect, record, remember', icon: 'book', group: 'Life', add: 'journal' },
@@ -402,6 +451,9 @@ const TYPE_META = {
   budgets: { label: 'Budgets', icon: 'pie', view: 'finances', tab: 'budgets' },
   goals: { label: 'Goals', icon: 'target', view: 'finances', tab: 'goals' },
   journal: { label: 'Journal', icon: 'book', view: 'journal' },
+  habits: { label: 'Habits', icon: 'repeat', view: 'habits' },
+  study: { label: 'Study sessions', icon: 'bookOpen', view: 'study' },
+  workouts: { label: 'Workouts', icon: 'dumbbell', view: 'exercise' },
   courses: { label: 'Courses', icon: 'cap', view: 'courses' },
   notes: { label: 'Notes', icon: 'note', view: 'notes' },
   fuel: { label: 'Fuel', icon: 'car', view: 'car' },
@@ -516,7 +568,10 @@ const ICONS = {
   sheet: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
   gauge: '<path d="M12 21a9 9 0 1 1 9-9"/><path d="m12 12 5-3.5"/><circle cx="12" cy="12" r="1.5"/>',
   droplet: '<path d="M12 3s6 6.2 6 10a6 6 0 0 1-12 0c0-3.8 6-10 6-10z"/>',
-  wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5l-9 9a2.8 2.8 0 0 1-4-4z"/><path d="M14.5 6.5 17 4a4 4 0 0 1 3 3l-2.5 2.5"/>'
+  wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5l-9 9a2.8 2.8 0 0 1-4-4z"/><path d="M14.5 6.5 17 4a4 4 0 0 1 3 3l-2.5 2.5"/>',
+  repeat: '<path d="M4 10.5A4.5 4.5 0 0 1 8.5 6H20m0 0-3.5-3.5M20 6l-3.5 3.5"/><path d="M20 13.5A4.5 4.5 0 0 1 15.5 18H4m0 0 3.5 3.5M4 18l3.5-3.5"/>',
+  dumbbell: '<path d="M6.5 5.5v13M3.5 8.5v7M17.5 5.5v13M20.5 8.5v7M6.5 12h11"/>',
+  bookOpen: '<path d="M12 7.6C10.4 6.1 8.2 5.4 4 5.4V18c4.2 0 6.4.7 8 2.2 1.6-1.5 3.8-2.2 8-2.2V5.4c-4.2 0-6.4.7-8 2.2z"/><path d="M12 7.6v12.6"/>'
 };
 const icon = (name, size = 18, sw = 1.9) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -524,12 +579,12 @@ const icon = (name, size = 18, sw = 1.9) => `<svg width="${size}" height="${size
    4. STORAGE — localStorage persistence
    ========================================================= */
 let DB = null;
-const emptyDB = () => ({ version: 1, settings: { name: '', currency: '$' }, projects: [], tasks: [], transactions: [], budgets: [], goals: [], journal: [], courses: [], notes: [], trash: [] });
+const emptyDB = () => ({ version: 1, settings: { name: '', currency: '$', studyWeekly: 10, exerciseWeekly: 4 }, projects: [], tasks: [], transactions: [], budgets: [], goals: [], journal: [], courses: [], notes: [], habits: [], habitLogs: [], study: [], workouts: [], trash: [] });
 function normalizeDB(obj) {
   const base = emptyDB();
   const out = Object.assign(base, obj || {});
   out.settings = Object.assign(emptyDB().settings, (obj && obj.settings) || {});
-  ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'trash'].forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
+  ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'trash'].forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
   return out;
 }
 function loadDB() {
@@ -648,8 +703,63 @@ function seedDB() {
     N('Home office shopping list', 'Personal', ['home'], false, '- Monitor arm\n- Cable tray\n- Desk lamp with warm light\n- A plant for the shelf', 5),
     N('Useful links', 'Reference', ['links', 'dev'], false, 'MDN Web Docs: https://developer.mozilla.org\nContrast checker: https://webaim.org/resources/contrastchecker/', 20)
   ];
+
+  /* Habits, study and workouts — a few months of history so the heatmaps read like a real year. */
+  const spread = n => ((n * 9301 + 49297) % 233280) / 233280;   // deterministic, so the demo looks the same everywhere
+  const H = (name, category, target, color, notes) => base({ name, category, target, color, active: true, notes });
+  db.habits = [
+    H('Morning workout', 'Fitness', 5, '#22C55E', 'Thirty minutes before the day gets loud.'),
+    H('Study an hour', 'Learning', 6, '#00A8FF', 'Certification prep — one focused block.'),
+    H('Read 20 pages', 'Mind', 7, '#8B5CF6', 'Paper book, phone in another room.'),
+    H('Walk 8k steps', 'Health', 6, '#F5A524', ''),
+    H('No screens after 11pm', 'Health', 7, '#FF8A5B', 'Sleep is the cheapest performance gain there is.')
+  ];
+  db.habitLogs = [];
+  db.habits.forEach((h, hi) => {
+    for (let i = 0; i < 120; i++) {
+      const keep = i === 0 ? hi < 3 : spread(i * 13 + hi * 101) < (num(h.target) / 7) * (i < 30 ? 0.95 : 0.82);
+      if (!keep) continue;
+      const ds = d(-i);
+      db.habitLogs.push({ id: uid(), habitId: h.id, date: ds, done: true, created: ds, updated: ds, ts: now - i * 86400e3 - (tick++) * 1000 });
+    }
+  });
+
+  const studySubjects = [
+    ['Planning & scheduling', 'Practice', 'Time-impact analysis worked example'],
+    ['Advanced JavaScript Patterns', 'Lecture', 'Module 4 — closures and factories'],
+    ['Financial Modeling Fundamentals', 'Practice', 'Three-statement model, revenue build'],
+    ['UX Research Methods', 'Reading', 'Interview technique, avoiding leading questions'],
+    ['Spanish', 'Revision', 'Past tense drills and vocabulary deck']
+  ];
+  db.study = [];
+  for (let i = 0; i < 110; i++) {
+    if (spread(i * 29 + 7) > 0.62) continue;
+    const pick = studySubjects[Math.floor(spread(i * 53 + 11) * studySubjects.length) % studySubjects.length];
+    const mins = [30, 45, 60, 75, 90, 120][Math.floor(spread(i * 71 + 3) * 6) % 6];
+    const ds = d(-i);
+    db.study.push(base({ date: ds, subject: pick[0], kind: pick[1], minutes: mins, courseId: '', topic: pick[2], created: ds, updated: ds, ts: now - i * 86400e3 - (tick++) * 1000 }));
+  }
+
+  const sessions = [
+    ['Strength', 'Push day — chest, shoulders, triceps', 55, 'Hard', 0],
+    ['Strength', 'Pull day — back and biceps', 55, 'Hard', 0],
+    ['Strength', 'Leg day', 60, 'Hard', 0],
+    ['Cardio', 'Easy run', 35, 'Moderate', 5.5],
+    ['Cardio', 'Intervals — 8 × 400m', 40, 'Hard', 6.4],
+    ['Walk', 'Evening walk', 45, 'Easy', 4.2],
+    ['Mobility', 'Hips and shoulders', 25, 'Easy', 0],
+    ['Sport', 'Five-a-side football', 70, 'Hard', 0]
+  ];
+  db.workouts = [];
+  for (let i = 0; i < 110; i++) {
+    if (spread(i * 37 + 19) > 0.58) continue;
+    const w = sessions[Math.floor(spread(i * 61 + 5) * sessions.length) % sessions.length];
+    const ds = d(-i);
+    db.workouts.push(base({ date: ds, type: w[0], focus: w[1], minutes: w[2], intensity: w[3], distance: w[4], notes: '', created: ds, updated: ds, ts: now - i * 86400e3 - (tick++) * 1000 }));
+  }
   return db;
 }
+
 
 /* =========================================================
    6. FORM SCHEMAS — one schema drives add + edit for every collection
@@ -726,7 +836,37 @@ const FORMS = {
     { k: 'tags', l: 'Tags', t: 'tags', ph: 'comma, separated' },
     { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.' },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
-  ] }
+  ] },
+
+  habits: { noun: 'Habit', fields: [
+    { k: 'name', l: 'Habit', t: 'text', req: true, full: true, ph: 'e.g. Read 20 pages' },
+    { k: 'category', l: 'Category', t: 'select', o: LISTS.habitCats, def: 'Health' },
+    { k: 'target', l: 'Days per week', t: 'number', min: 1, step: '1', def: 7 },
+    { k: 'color', l: 'Colour', t: 'select', o: HABIT_COLORS, def: HABIT_COLORS[0].v },
+    { k: 'active', l: 'Active', t: 'check', cl: 'Show in today\u2019s checklist', def: true },
+    { k: 'notes', l: 'Why it matters', t: 'textarea', full: true, rows: 2, ph: 'The cue, the reward, or why you started.' }
+  ], validate: v => num(v.target) < 1 || num(v.target) > 7 ? 'Days per week must be between 1 and 7' : '',
+     after: h => { if (!h.color) h.color = HABIT_COLORS[0].v; } },
+
+  study: { noun: 'Study Session', fields: [
+    { k: 'subject', l: 'Subject', t: 'text', req: true, full: true, ph: 'e.g. Planning & scheduling' },
+    { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() },
+    { k: 'minutes', l: 'Minutes', t: 'number', req: true, min: 1, step: '5', def: 60 },
+    { k: 'kind', l: 'Session type', t: 'select', o: LISTS.studyKinds, def: 'Reading' },
+    { k: 'courseId', l: 'Course', t: 'select', o: () => [{ v: '', l: '\u2014 No course \u2014' }, ...DB.courses.map(c => ({ v: c.id, l: c.name }))] },
+    { k: 'topic', l: 'What you covered', t: 'textarea', full: true, rows: 3, ph: 'Chapters, problems solved, takeaways\u2026' }
+  ], validate: v => num(v.minutes) <= 0 ? 'Minutes must be greater than zero' : '' },
+
+  workouts: { noun: 'Workout', fields: [
+    { k: 'focus', l: 'Focus', t: 'text', full: true, ph: 'e.g. Push day, 5 km easy run' },
+    { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() },
+    { k: 'type', l: 'Type', t: 'select', o: LISTS.workoutTypes, def: 'Strength' },
+    { k: 'minutes', l: 'Minutes', t: 'number', req: true, min: 1, step: '5', def: 45 },
+    { k: 'intensity', l: 'Intensity', t: 'select', o: LISTS.intensity, def: 'Moderate' },
+    { k: 'distance', l: 'Distance (km)', t: 'number', min: 0, step: '0.1', ph: 'Optional' },
+    { k: 'notes', l: 'Notes', t: 'textarea', full: true, rows: 2, ph: 'Sets, reps, how it felt\u2026' }
+  ], validate: v => num(v.minutes) <= 0 ? 'Minutes must be greater than zero' : '',
+     after: w => { if (!w.focus) w.focus = w.type; } }
 };
 
 function optionsHTML(f, vals) {
@@ -870,13 +1010,22 @@ function removeItem(type, id) {
   const [removed] = arr.splice(idx, 1);
   DB.trash = (DB.trash || []).filter(t => t.id !== id).concat({ id, ts: Date.now() });
   const unlinked = [];
+  let logs = [];
   if (type === 'projects') DB.tasks.forEach(t => { if (t.projectId === id) { t.projectId = ''; unlinked.push(t); } });
   if (type === 'journal' && UI.journalSel === id) UI.journalSel = null;
+  if (type === 'habits') {
+    logs = DB.habitLogs.filter(l => l.habitId === id);
+    DB.habitLogs = DB.habitLogs.filter(l => l.habitId !== id);
+    DB.trash = DB.trash.concat(logs.map(l => ({ id: l.id, ts: Date.now() })));
+    if (UI.habitSel === id) UI.habitSel = 'all';
+  }
   saveDB(); render();
   toast(`${FORMS[type].noun} deleted`, { action: 'Undo', onAction: () => {
     arr.splice(Math.min(idx, arr.length), 0, removed);
     removed.ts = Date.now();
-    DB.trash = (DB.trash || []).filter(t => t.id !== id);
+    const back = new Set([id, ...logs.map(l => l.id)]);
+    DB.trash = (DB.trash || []).filter(t => !back.has(t.id));
+    logs.forEach(l => { l.ts = Date.now(); DB.habitLogs.push(l); });
     unlinked.forEach(t => { t.projectId = id; });
     saveDB(); render(); toast(`${FORMS[type].noun} restored`);
   } });
@@ -917,6 +1066,84 @@ function journalStreak() {
   while (days.has(toDateStr(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
+
+/* ---------- Habits, studying and exercising ----------
+   Every tracker works off one shape: a set of dates, or a map of date -> value. */
+const weekStart = (base = new Date()) => { const d = new Date(base); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return toDateStr(d); };  // weeks run Monday -> Sunday
+const weekDates = (ws = weekStart()) => { const start = parseDate(ws); return Array.from({ length: 7 }, (_, i) => addDays(i, start)); };
+/** Days in a row up to today (today may still be pending without breaking it). */
+function dayStreak(days) {
+  const d = new Date(); let n = 0;
+  if (!days.has(toDateStr(d))) d.setDate(d.getDate() - 1);
+  while (days.has(toDateStr(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+/** Longest run of consecutive days ever recorded. */
+function bestStreak(days) {
+  const sorted = [...days].sort();
+  let best = 0, run = 0, prev = '';
+  sorted.forEach(ds => { run = prev && addDays(1, parseDate(prev)) === ds ? run + 1 : 1; prev = ds; if (run > best) best = run; });
+  return best;
+}
+const dur = mins => {
+  const m = Math.round(num(mins));
+  if (!m) return '0m';
+  const h = Math.floor(m / 60), r = m % 60;
+  return (h ? h + 'h' : '') + (r ? (h ? ' ' : '') + r + 'm' : '');
+};
+const hours = mins => (num(mins) / 60).toFixed(num(mins) % 60 === 0 ? 0 : 1);
+const minutesByDay = rows => rows.reduce((m, r) => { if (r.date) m[r.date] = (m[r.date] || 0) + num(r.minutes); return m; }, {});
+const inMonth = (rows, m) => rows.filter(r => String(r.date || '').slice(0, 7) === m);
+const inWeek = (rows, ws = weekStart()) => { const end = addDays(6, parseDate(ws)); return rows.filter(r => r.date >= ws && r.date <= end); };
+const dateSet = rows => new Set(rows.map(r => r.date).filter(Boolean));
+const habitColor = h => (h && h.color) || HABIT_COLORS[0].v;
+const activeHabits = () => DB.habits.filter(h => h.active !== false);
+const habitKey = (habitId, date) => habitId + '|' + date;
+/** Ticked days, as a Map of "habitId|date" -> log, so lookups stay O(1) in a render. */
+function habitIndex() {
+  const m = new Map();
+  (DB.habitLogs || []).forEach(l => { if (l.done) m.set(habitKey(l.habitId, l.date), l); });
+  return m;
+}
+/** The dates one habit was ticked — or, with no id, every date any habit was. */
+function habitDays(habitId) {
+  const s = new Set();
+  (DB.habitLogs || []).forEach(l => { if (l.done && (!habitId || l.habitId === habitId)) s.add(l.date); });
+  return s;
+}
+/** date -> how many habits were ticked that day (one habit: 1 or nothing). */
+function habitCounts(habitId) {
+  const known = new Set(DB.habits.map(h => h.id));
+  const by = {};
+  (DB.habitLogs || []).forEach(l => {
+    if (!l.done || !known.has(l.habitId)) return;
+    if (habitId && l.habitId !== habitId) return;
+    by[l.date] = (by[l.date] || 0) + 1;
+  });
+  return by;
+}
+/** Tick or untick one habit on one day. Returns the new state. */
+function toggleHabit(habitId, date) {
+  const logs = DB.habitLogs;
+  const cur = logs.find(l => l.habitId === habitId && l.date === date);
+  let on;
+  if (cur) { cur.done = on = !cur.done; cur.updated = today(); cur.ts = Date.now(); }
+  else { logs.unshift({ id: uid(), habitId, date, done: true, created: today(), updated: today(), ts: Date.now() }); on = true; }
+  saveDB();
+  return on;
+}
+const habitStreak = habitId => dayStreak(habitDays(habitId));
+const habitWeekDone = (habitId, ws = weekStart()) => { const days = habitDays(habitId); return weekDates(ws).filter(d => days.has(d)).length; };
+/** How often a habit was kept over the last N days, as a percentage. */
+function habitRate(habitId, days = 30) {
+  const set = habitDays(habitId);
+  let n = 0;
+  for (let i = 0; i < days; i++) if (set.has(addDays(-i))) n++;
+  return Math.round(n / days * 100);
+}
+const studyWeeklyGoal = () => Math.max(0, num(DB.settings.studyWeekly) || 0);       // hours a week
+const exerciseWeeklyGoal = () => Math.max(0, num(DB.settings.exerciseWeekly) || 0); // sessions a week
+const courseName = id => (DB.courses.find(c => c.id === id) || {}).name || '';
 /** Open deadlines across tasks, projects, courses and goals up to N days ahead (overdue included). */
 function upcoming(days = 14) {
   const end = addDays(days), out = [];
@@ -939,7 +1166,11 @@ const EXPORTS = {
   Goals: { rows: () => DB.goals, cols: [['Goal', 'name'], ['Target Amount', 'target'], ['Saved So Far', 'saved'], ['Target Date', 'deadline']] },
   Journal: { rows: () => [...DB.journal].sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Title', 'title'], ['Mood', r => LISTS.moods[num(r.mood) - 1] || ''], ['Tags', r => (r.tags || []).join(', ')], ['Entry', 'content']] },
   Courses: { rows: () => DB.courses, cols: [['Course', 'name'], ['Platform', 'platform'], ['Instructor', 'instructor'], ['Status', 'status'], ['Start Date', 'start'], ['Deadline', 'deadline'], ['Lessons Done', 'lessonsDone'], ['Total Lessons', 'lessonsTotal'], ['Link', 'link'], ['Resources', 'resources'], ['Notes', 'notes']] },
-  Notes: { rows: () => DB.notes, cols: [['Title', 'title'], ['Category', 'category'], ['Tags', r => (r.tags || []).join(', ')], ['Pinned', r => r.pinned ? 'Yes' : 'No'], ['Created', 'created'], ['Updated', 'updated'], ['Content', 'content']] }
+  Notes: { rows: () => DB.notes, cols: [['Title', 'title'], ['Category', 'category'], ['Tags', r => (r.tags || []).join(', ')], ['Pinned', r => r.pinned ? 'Yes' : 'No'], ['Created', 'created'], ['Updated', 'updated'], ['Content', 'content']] },
+  Habits: { rows: () => DB.habits, cols: [['Habit', 'name'], ['Category', 'category'], ['Days per week', 'target'], ['Active', r => r.active === false ? 'No' : 'Yes'], ['Current streak', r => habitStreak(r.id)], ['30-day rate', r => habitRate(r.id) + '%'], ['Notes', 'notes']] },
+  'Habit log': { rows: () => (DB.habitLogs || []).filter(l => l.done).sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Habit', r => (DB.habits.find(h => h.id === r.habitId) || {}).name || ''], ['Done', () => 'Yes']] },
+  Study: { rows: () => [...DB.study].sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Subject', 'subject'], ['Course', r => courseName(r.courseId)], ['Session type', 'kind'], ['Minutes', 'minutes'], ['Hours', r => hours(r.minutes)], ['What you covered', 'topic']] },
+  Workouts: { rows: () => [...DB.workouts].sort((a, b) => a.date.localeCompare(b.date)), cols: [['Date', 'date'], ['Type', 'type'], ['Focus', 'focus'], ['Minutes', 'minutes'], ['Intensity', 'intensity'], ['Distance (km)', 'distance'], ['Notes', 'notes']] }
 };
 function download(filename, content, mime) {
   const url = URL.createObjectURL(new Blob([content], { type: mime }));
@@ -952,7 +1183,7 @@ function exportCSV(name) {
   const ex = EXPORTS[name], rows = ex.rows();
   const lines = [ex.cols.map(c => csvCell(c[0])).join(',')];
   rows.forEach(r => lines.push(ex.cols.map(c => csvCell(typeof c[1] === 'function' ? c[1](r) : r[c[1]])).join(',')));
-  download(`second-brain-${name.toLowerCase()}-${today()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  download(`second-brain-${name.toLowerCase().replace(/\s+/g, '-')}-${today()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
   toast(`${name} exported · ${plural(rows.length, 'row')}`);
 }
 /* =========================================================
@@ -962,7 +1193,7 @@ function exportCSV(name) {
    ========================================================= */
 const SYNC_KEY = 'secondBrain.sync.v1';
 const SYNC_FILE = 'second-brain.json';
-const COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes'];
+const COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts'];
 const TOMB_DAYS = 120;          // how long a deletion is remembered
 const AUTO_EVERY = 5 * 60000;   // background sync interval
 
@@ -2032,21 +2263,23 @@ const NAV = [
   { k: 'notes', l: 'Notes', ic: 'note' },
   { k: 'more', l: 'More', ic: 'layers' }
 ];
-const SUBVIEWS = ['projects', 'courses', 'journal', 'car', 'settings'];
-const TITLES = { home: 'Dashboard', tasks: 'Tasks', money: 'Finances', notes: 'Notes', more: 'More', projects: 'Projects', courses: 'Courses', journal: 'Journal', car: 'Car', settings: 'Settings' };
+const SUBVIEWS = ['projects', 'courses', 'journal', 'habits', 'study', 'exercise', 'car', 'settings'];
+const TITLES = { home: 'Dashboard', tasks: 'Tasks', money: 'Finances', notes: 'Notes', more: 'More', projects: 'Projects', courses: 'Courses', journal: 'Journal', habits: 'Habits', study: 'Studying', exercise: 'Exercising', car: 'Car', settings: 'Settings' };
 
 const UI = {
   view: 'home', prev: 'home',
   taskFilter: 'today', moneyTab: 'activity', finMonth: today().slice(0, 7), txSort: 'date',
   finRange: 'month', finFrom: '', finTo: '', finCurrency: 'AED',
   noteCat: 'All', noteQuery: '', projFilter: 'All', courseFilter: 'All', carTab: 'fuel',
-  journalSel: null, captureType: 'task'
+  journalSel: null, captureType: 'task',
+  heatMonth: today().slice(0, 7), heatScope: 'month', habitSel: 'all'
 };
 
 /* ---------- helpers ---------- */
 const SCREENS = {};
 const addType = () => ({
   home: 'tasks', tasks: 'tasks', notes: 'notes', projects: 'projects', courses: 'courses', journal: 'journal',
+  habits: 'habits', study: 'study', exercise: 'workouts',
   car: 'sheetRow',
   money: { activity: 'transactions', budgets: 'budgets', goals: 'goals', sheet: 'sheetRow' }[UI.moneyTab]
 }[UI.view] || null);
@@ -2159,6 +2392,31 @@ SCREENS.home = () => {
   <div class="card">
     ${cardHead('target', focus.length ? 'Today' : 'Up next', `<button class="link-btn" data-act="go" data-val="tasks">All ${icon('arrowR', 13)}</button>`)}
     <div class="list">${focus.length ? focus.map(taskItem).join('') : (open.length ? [...open].sort(byDue).slice(0, 4).map(taskItem).join('') : emptyState('check', 'All clear', 'No open tasks right now.'))}</div>
+  </div>
+
+  <div class="card">
+    ${cardHead('repeat', 'Routine today', `<button class="link-btn" data-act="go" data-val="habits">Habits ${icon('arrowR', 13)}</button>`)}
+    ${(() => {
+      const idx = habitIndex(), live = activeHabits();
+      const doneN = live.filter(h => idx.has(habitKey(h.id, t))).length;
+      const studyMins = sum(DB.study.filter(x => x.date === t), x => x.minutes);
+      const exToday = DB.workouts.filter(x => x.date === t);
+      return `${live.length ? `<div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">Habits</span><b class="mono">${doneN}/${live.length}</b></div>
+        <div class="bar ${doneN === live.length ? 'green' : ''}" style="margin-bottom:4px"><i style="width:${live.length ? doneN / live.length * 100 : 0}%"></i></div>
+        <div class="list">${habitChecklist(live.slice(0, 4), idx, t)}</div>`
+        : `<p class="hint" style="margin-bottom:12px">No habits yet — pick one small thing to do daily.</p>`}
+      <div class="grid-2" style="margin-top:12px">
+        <div class="card tap" style="margin:0" data-act="go" data-val="study">
+          <div class="card-title" style="margin-bottom:6px">${icon('bookOpen', 15)}Studying</div>
+          <b style="font-size:17px">${dur(studyMins)}</b><div class="hint">today · ${dur(sum(inWeek(DB.study), x => x.minutes))} this week</div>
+        </div>
+        <div class="card tap" style="margin:0" data-act="go" data-val="exercise">
+          <div class="card-title" style="margin-bottom:6px">${icon('dumbbell', 15)}Exercising</div>
+          <b style="font-size:17px">${exToday.length ? dur(sum(exToday, x => x.minutes)) : 'Rest'}</b><div class="hint">today · ${plural(inWeek(DB.workouts).length, 'workout')} this week</div>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:12px">${addBtn('study', 'Log study', 'btn-ghost sm')}${addBtn('workouts', 'Log workout', 'btn-ghost sm')}</div>`;
+    })()}
   </div>
 
   <div class="card">
@@ -2396,6 +2654,9 @@ SCREENS.more = () => {
     ${tile('projects', 'folder', 'Projects', plural(DB.projects.filter(p => p.status === 'Active').length, 'active project'))}
     ${tile('courses', 'cap', 'Courses', plural(DB.courses.filter(c => c.status === 'In Progress').length, 'in progress'))}
     ${tile('journal', 'book', 'Journal', plural(journalStreak(), 'day') + ' streak')}
+    ${tile('habits', 'repeat', 'Habits', (() => { const i = habitIndex(), l = activeHabits(); return `${l.filter(h => i.has(habitKey(h.id, today()))).length}/${l.length} done today`; })())}
+    ${tile('study', 'bookOpen', 'Studying', dur(sum(inWeek(DB.study), r => r.minutes)) + ' this week')}
+    ${tile('exercise', 'dumbbell', 'Exercising', plural(inWeek(DB.workouts).length, 'workout') + ' this week')}
     ${tile('car', 'car', 'Car', Sheets.connected() ? plural((Sheets.data.fuel || []).length, 'fill-up') : 'Fuel & service')}
     ${tile('settings', 'sliders', 'Settings', 'Backup, sync, data')}
   </div>
@@ -2483,6 +2744,214 @@ SCREENS.journal = () => {
   </div>`).join('') : `<div class="card">${emptyState('book', 'No entries yet', 'Reflect on today in a few lines.', addBtn('journal', 'Write first entry'))}</div>`}`;
 };
 
+
+/* =========================================================
+   TRACKERS — habits, studying, exercising
+   ========================================================= */
+/** One month as a calendar heatmap. `days` maps YYYY-MM-DD to a number. */
+function calHeat(month, days, opt = {}) {
+  const ramp = HEAT_RAMPS[opt.ramp] || HEAT_RAMPS.blue;
+  const [y, mo] = month.split('-').map(Number);
+  const dim = new Date(y, mo, 0).getDate();
+  const lead = (new Date(y, mo - 1, 1).getDay() + 6) % 7;      // Monday-first grid
+  const max = opt.max || Math.max(1, ...Object.values(days).map(num));
+  const t = today();
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div class="cal-day pad"></div>';
+  for (let d = 1; d <= dim; d++) {
+    const ds = `${month}-${pad(d)}`, v = num(days[ds]);
+    const lvl = v > 0 ? Math.min(4, 1 + Math.floor(v / max * 3.999)) : 0;
+    const tip = opt.label ? opt.label(ds, v) : fmtDate(ds);
+    const act = opt.act && ds <= t ? ' ' + opt.act(ds, v) : '';
+    cells += `<div class="cal-day${lvl >= 3 ? ' lit' : ''}${ds === t ? ' today' : ''}${ds > t ? ' future' : ''}${act ? ' tap' : ''}"${lvl ? ` style="background:${ramp[lvl - 1]}"` : ''} title="${esc(tip)}"${act}>${opt.mini ? '' : d}</div>`;
+  }
+  const head = opt.mini ? '' : `<div class="cal-head">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span>${x}</span>`).join('')}</div>`;
+  return `<div class="cal${opt.mini ? ' mini' : ''}">${head}<div class="cal-grid">${cells}</div></div>`;
+}
+/** Twelve mini months — the whole year at a glance. */
+function yearHeat(year, days, opt = {}) {
+  const max = opt.max || Math.max(1, ...Object.values(days).map(num));
+  let out = '';
+  for (let m = 1; m <= 12; m++) {
+    const key = `${year}-${pad(m)}`;
+    const rows = Object.entries(days).filter(([d, v]) => d.slice(0, 7) === key && num(v) > 0);
+    const total = rows.reduce((s, r) => s + num(r[1]), 0);
+    out += `<div><h5>${monthLabel(key, false)}</h5>${calHeat(key, days, { ...opt, mini: true, max, act: null })}
+      <div class="m-sub">${opt.sub ? opt.sub(rows.length, total) : plural(rows.length, 'day')}</div></div>`;
+  }
+  return `<div class="year-grid">${out}</div>`;
+}
+const heatLegend = (ramp = 'blue') => `<div class="heat-legend"><span>Less</span><i style="background:var(--surface-3)"></i>${(HEAT_RAMPS[ramp] || HEAT_RAMPS.blue).map(c => `<i style="background:${c}"></i>`).join('')}<span>More</span></div>`;
+/** The heatmap card: month/year switch, a month stepper, the grid and its legend. */
+function heatCard(ic, title, days, opt = {}) {
+  const year = UI.heatMonth.slice(0, 4);
+  const label = UI.heatScope === 'year' ? year : `${monthLabel(UI.heatMonth)} ${year}`;
+  const body = UI.heatScope === 'year' ? yearHeat(year, days, opt) : calHeat(UI.heatMonth, days, opt);
+  return `<div class="card">
+    ${cardHead(ic, title)}
+    <div class="row" style="gap:8px;margin-bottom:10px">
+      <button class="btn btn-ghost sm" data-act="heatShift" data-val="-1" aria-label="Earlier">${icon('chevL', 16)}</button>
+      <button class="btn btn-ghost sm" style="flex:1" data-act="heatNow">${label}</button>
+      <button class="btn btn-ghost sm" data-act="heatShift" data-val="1" aria-label="Later">${icon('chevR', 16)}</button>
+    </div>
+    ${seg('heatScope', [['month', 'Month'], ['year', 'Year']])}
+    ${opt.pick || ''}
+    ${body}
+    <div class="row-gap" style="margin-top:12px;justify-content:space-between">${opt.foot || '<span class="hint"></span>'}${heatLegend(opt.ramp)}</div>
+  </div>`;
+}
+/** Mon–Sun dots for one week: filled where the day is in `days`. */
+function weekDots(days, color = 'var(--blue-2)', ws = weekStart()) {
+  return `<div class="week-dots" style="--c:${esc(color)}">${weekDates(ws).map(ds =>
+    `<i class="${days.has(ds) ? 'on' : ''}${ds === today() ? ' now' : ''}" title="${esc(fmtDate(ds, { weekday: 'short', month: 'short', day: 'numeric' }))}"></i>`).join('')}</div>`;
+}
+/** Log rows grouped under a date heading — shared by studying and exercising. */
+function dayGroups(rows, rowHTML, totalLabel) {
+  const by = {};
+  rows.forEach(r => { (by[r.date] = by[r.date] || []).push(r); });
+  return Object.keys(by).sort((a, b) => b.localeCompare(a)).map(d => `
+    <div class="day-head"><span>${esc(fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric' }))}${d === today() ? ' · today' : ''}</span><b>${totalLabel(by[d])}</b></div>
+    ${by[d].map(rowHTML).join('')}`).join('');
+}
+/** The habit checklist — the same rows on the Home screen and the Habits screen. */
+function habitChecklist(habits, idx, t = today()) {
+  return habits.map(h => {
+    const on = idx.has(habitKey(h.id, t)), c = habitColor(h), st = habitStreak(h.id), target = num(h.target) || 7;
+    return `<div class="item" style="--c:${esc(c)}">
+      <button class="habit-check${on ? ' on' : ''}" data-act="toggleHabit" data-id="${h.id}" data-date="${t}" aria-pressed="${on}" aria-label="${esc(h.name)} — mark done today">${icon('check', 16, 3)}</button>
+      <div class="grow" data-act="edit" data-type="habits" data-id="${h.id}">
+        <div class="t">${esc(h.name)}</div>
+        <div class="s">${st ? `${plural(st, 'day')} streak · ` : ''}${habitWeekDone(h.id)}/${target} this week</div></div>
+      ${weekDots(habitDays(h.id), c)}
+    </div>`;
+  }).join('');
+}
+
+SCREENS.habits = () => {
+  const t = today(), idx = habitIndex();
+  const all = [...DB.habits].sort((a, b) => (a.active === false) - (b.active === false) || String(a.name).localeCompare(String(b.name)));
+  const live = activeHabits();
+  const done = live.filter(h => idx.has(habitKey(h.id, t))).length;
+  if (UI.habitSel !== 'all' && !DB.habits.some(h => h.id === UI.habitSel)) UI.habitSel = 'all';
+  const sel = UI.habitSel === 'all' ? null : DB.habits.find(h => h.id === UI.habitSel);
+  const counts = habitCounts(sel ? sel.id : '');
+  const max = sel ? 1 : Math.max(1, live.length);
+  const monthTicks = Object.entries(counts).filter(([d]) => d.slice(0, 7) === UI.heatMonth).reduce((s, [, v]) => s + v, 0);
+  const best = all.length ? Math.max(...all.map(h => bestStreak(habitDays(h.id)))) : 0;
+  const pct = live.length ? Math.round(done / live.length * 100) : 0;
+
+  const picker = `<select class="select" data-bind="habitSel" style="margin-bottom:12px" aria-label="Which habit to chart">
+      <option value="all"${UI.habitSel === 'all' ? ' selected' : ''}>All habits</option>
+      ${all.map(h => `<option value="${h.id}"${UI.habitSel === h.id ? ' selected' : ''}>${esc(h.name)}</option>`).join('')}</select>`;
+
+  return `
+  <div class="stat-grid">
+    ${statTile('check', 'Done today', `${done}/${live.length}`, pct + '% of today’s habits')}
+    ${statTile('flame', 'Best streak', plural(best, 'day'), plural(monthTicks, 'tick') + ' this month')}
+  </div>
+  <div class="card">
+    ${cardHead('repeat', 'Today', `<b class="mono hint">${done}/${live.length}</b>`)}
+    ${live.length ? `<div class="bar ${pct === 100 ? 'green' : ''}" style="margin-bottom:6px"><i style="width:${pct}%"></i></div>
+    <div class="list">${habitChecklist(live, idx, t)}</div>`
+      : emptyState('repeat', 'No habits yet', 'Pick one or two small things you want to do most days.', addBtn('habits', 'Add a habit'))}
+  </div>
+  ${DB.habits.length ? heatCard('calendar', sel ? esc(sel.name) : 'Every habit', counts, {
+    ramp: 'violet', max, pick: picker,
+    label: (ds, v) => `${fmtDate(ds, { weekday: 'short', month: 'short', day: 'numeric' })} · ${sel ? (v ? 'done' : 'not done') : `${v} of ${plural(live.length, 'habit')}`}`,
+    act: sel ? ds => `data-act="toggleHabit" data-id="${sel.id}" data-date="${ds}"` : null,
+    sub: (d, total) => sel ? plural(d, 'day') : `${d}d · ${total}`,
+    foot: `<span class="hint">${sel ? 'Tap a day to tick it' : `${monthTicks} ticks`}</span>`
+  }) : ''}
+  ${all.length ? all.map(h => {
+    const c = habitColor(h), on = idx.has(habitKey(h.id, t)), target = num(h.target) || 7, wkn = habitWeekDone(h.id);
+    return `<div class="card" style="--c:${esc(c)}">
+      <div class="row" style="gap:8px;margin-bottom:10px" data-act="edit" data-type="habits" data-id="${h.id}">
+        <span class="chip"><span class="h-dot"></span>${esc(h.category || 'Other')}</span>
+        ${h.active === false ? '<span class="chip slate">Paused</span>' : ''}
+      </div>
+      <div data-act="edit" data-type="habits" data-id="${h.id}">
+        <b style="font-size:16.5px;letter-spacing:-.02em">${esc(h.name)}</b>
+        ${h.notes ? `<div class="hint" style="margin-top:4px">${esc(h.notes)}</div>` : ''}
+        <div class="row" style="justify-content:space-between;margin:12px 0 7px;font-size:12.5px">
+          <span class="hint">${plural(habitStreak(h.id), 'day')} streak · ${habitRate(h.id)}% of the last 30</span><b class="mono">${wkn}/${target}</b></div>
+        <div class="bar ${wkn >= target ? 'green' : ''}"><i style="width:${Math.min(100, wkn / target * 100)}%"></i></div>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:12px">${weekDots(habitDays(h.id), c)}
+        <button class="btn ${on ? 'btn-ghost' : 'btn-primary'} sm" data-act="toggleHabit" data-id="${h.id}" data-date="${t}">${icon(on ? 'x' : 'check', 15)} ${on ? 'Undo' : 'Tick today'}</button></div>
+    </div>`;
+  }).join('') : ''}
+  <div class="btn-row"><button class="btn btn-ghost" data-act="exportCSV" data-val="Habit log">${icon('download', 15)} Export habit log</button></div>`;
+};
+
+SCREENS.study = () => {
+  const rows = [...DB.study].sort((a, b) => String(b.date).localeCompare(String(a.date)) || num(b.ts) - num(a.ts));
+  const mins = minutesByDay(DB.study);
+  const week = inWeek(DB.study), weekMins = sum(week, r => r.minutes);
+  const goalH = studyWeeklyGoal(), goalM = goalH * 60;
+  const pct = goalM ? Math.min(100, weekMins / goalM * 100) : 0;
+  const days = dateSet(DB.study);
+  const monthRows = inMonth(DB.study, UI.heatMonth), monthMins = sum(monthRows, r => r.minutes);
+  const row = r => `<div class="item" data-act="edit" data-type="study" data-id="${r.id}">
+    <div class="grow"><div class="t">${esc(r.subject || 'Study')}</div>
+      <div class="s">${esc(r.kind || 'Reading')}${r.topic ? ' · ' + esc(String(r.topic).replace(/\s+/g, ' ').slice(0, 60)) : ''}</div></div>
+    <span class="amt">${dur(r.minutes)}</span></div>`;
+  return `
+  <div class="stat-grid">
+    ${statTile('clock', 'This week', dur(weekMins), goalH ? `${Math.round(pct)}% of ${goalH}h` : plural(week.length, 'session'))}
+    ${statTile('flame', 'Streak', plural(dayStreak(days), 'day'), `${dur(monthMins)} in ${monthLabel(UI.heatMonth)}`)}
+  </div>
+  ${goalM ? `<div class="card">${cardHead('target', 'Weekly target', `<span class="hint">Week of ${fmtDate(weekStart())}</span>`)}
+    <div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">${dur(weekMins)} of ${goalH}h</span><b class="mono">${Math.round(pct)}%</b></div>
+    <div class="bar ${pct >= 100 ? 'green' : ''}"><i style="width:${pct}%"></i></div>
+    <div style="margin-top:14px">${weekDots(days, '#00A8FF')}</div></div>` : ''}
+  ${heatCard('calendar', 'Days you studied', mins, {
+    ramp: 'blue',
+    label: (ds, v) => `${fmtDate(ds, { weekday: 'short', month: 'short', day: 'numeric' })} · ${v ? dur(v) : 'no study'}`,
+    act: ds => `data-act="add" data-type="study" data-preset="${esc(JSON.stringify({ date: ds }))}"`,
+    sub: (d, total) => `${d}d · ${dur(total)}`,
+    foot: `<span class="hint">${dur(monthMins)} · ${plural(monthRows.length, 'session')}</span>`
+  })}
+  <div class="card">
+    ${cardHead('bookOpen', 'Sessions', `<button class="link-btn" data-act="add" data-type="study">Log ${icon('plus', 13)}</button>`)}
+    ${rows.length ? `<div class="list">${dayGroups(rows.slice(0, 60), row, list => `${plural(list.length, 'session')} · ${dur(sum(list, r => r.minutes))}`)}</div>`
+      : emptyState('bookOpen', 'No study sessions yet', 'Log what you studied and the heatmap fills in.', addBtn('study', 'Log a session'))}
+  </div>`;
+};
+
+SCREENS.exercise = () => {
+  const rows = [...DB.workouts].sort((a, b) => String(b.date).localeCompare(String(a.date)) || num(b.ts) - num(a.ts));
+  const mins = minutesByDay(DB.workouts);
+  const week = inWeek(DB.workouts), goal = exerciseWeeklyGoal();
+  const pct = goal ? Math.min(100, week.length / goal * 100) : 0;
+  const days = dateSet(DB.workouts);
+  const monthRows = inMonth(DB.workouts, UI.heatMonth), monthMins = sum(monthRows, r => r.minutes), monthKm = sum(monthRows, r => r.distance);
+  const row = r => `<div class="item" data-act="edit" data-type="workouts" data-id="${r.id}">
+    <div class="grow"><div class="t">${esc(r.focus || r.type || 'Workout')}</div>
+      <div class="s">${esc(r.type || 'Other')} · ${esc(r.intensity || 'Moderate')}${num(r.distance) ? ' · ' + num(r.distance).toFixed(1) + ' km' : ''}</div></div>
+    <span class="amt">${dur(r.minutes)}</span></div>`;
+  return `
+  <div class="stat-grid">
+    ${statTile('dumbbell', 'This week', `${week.length}${goal ? ' / ' + goal : ''}`, goal ? `${Math.round(pct)}% of target` : plural(week.length, 'workout'))}
+    ${statTile('flame', 'Streak', plural(dayStreak(days), 'day'), `${dur(monthMins)} in ${monthLabel(UI.heatMonth)}`)}
+  </div>
+  ${goal ? `<div class="card">${cardHead('target', 'This week', `<span class="hint">Week of ${fmtDate(weekStart())}</span>`)}
+    <div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">${plural(week.length, 'workout')} of ${goal}</span><b class="mono">${Math.round(pct)}%</b></div>
+    <div class="bar green"><i style="width:${pct}%"></i></div>
+    <div style="margin-top:14px">${weekDots(days, '#22C55E')}</div></div>` : ''}
+  ${heatCard('calendar', 'Days you worked out', mins, {
+    ramp: 'green',
+    label: (ds, v) => `${fmtDate(ds, { weekday: 'short', month: 'short', day: 'numeric' })} · ${v ? dur(v) : 'rest day'}`,
+    act: ds => `data-act="add" data-type="workouts" data-preset="${esc(JSON.stringify({ date: ds }))}"`,
+    sub: (d, total) => `${d}d · ${dur(total)}`,
+    foot: `<span class="hint">${plural(monthRows.length, 'workout')}${monthKm ? ' · ' + monthKm.toFixed(1) + ' km' : ''}</span>`
+  })}
+  <div class="card">
+    ${cardHead('dumbbell', 'Workouts', `<button class="link-btn" data-act="add" data-type="workouts">Log ${icon('plus', 13)}</button>`)}
+    ${rows.length ? `<div class="list">${dayGroups(rows.slice(0, 60), row, list => `${plural(list.length, 'workout')} · ${dur(sum(list, r => r.minutes))}`)}</div>`
+      : emptyState('dumbbell', 'No workouts logged yet', 'Log what you did and for how long.', addBtn('workouts', 'Log a workout'))}
+  </div>`;
+};
+
 SCREENS.settings = () => {
   let bytes = 0; try { bytes = new Blob([localStorage.getItem(STORE_KEY) || '']).size; } catch (e) { /* ignore */ }
   const total = Object.values(DB).filter(Array.isArray).reduce((s, a) => s + a.length, 0);
@@ -2492,6 +2961,8 @@ SCREENS.settings = () => {
     <div class="form-grid">
       <div class="field"><label for="setName">Your name</label><input class="input" id="setName" value="${esc(DB.settings.name)}" placeholder="Used in the greeting"></div>
       <div class="field"><label for="setCur">Currency symbol</label><input class="input" id="setCur" value="${esc(DB.settings.currency)}" maxlength="4"></div>
+      <div class="field"><label for="setStudy">Study target · hours a week</label><input class="input" id="setStudy" type="number" min="0" step="1" value="${studyWeeklyGoal()}"></div>
+      <div class="field"><label for="setEx">Exercise target · workouts a week</label><input class="input" id="setEx" type="number" min="0" step="1" value="${exerciseWeeklyGoal()}"></div>
     </div>
     <button class="btn btn-primary" style="width:100%;margin-top:14px" data-act="saveSettings">${icon('check', 16)} Save preferences</button>
   </div>
@@ -2656,6 +3127,15 @@ const ACTIONS = {
     markCardAllPaid(el.dataset.card);
   },
   month: el => { UI.finMonth = shiftMonth(UI.finMonth, Number(el.dataset.val)); render(); },
+  heatShift: el => { UI.heatMonth = shiftMonth(UI.heatMonth, Number(el.dataset.val) * (UI.heatScope === 'year' ? 12 : 1)); render(); },
+  heatNow: () => { UI.heatMonth = today().slice(0, 7); render(); },
+  toggleHabit: el => {
+    const h = find('habits', el.dataset.id); if (!h) return;
+    const date = el.dataset.date || today();
+    const on = toggleHabit(h.id, date);
+    render();
+    if (date !== today()) toast(`${h.name} · ${on ? 'ticked' : 'cleared'} for ${fmtDate(date, { weekday: 'short', month: 'short', day: 'numeric' })}`);
+  },
   syncPanel: () => Sync.openPanel(),
   sheetsPanel: () => Sheets.openPanel(),
   sheetSync: () => Sheets.sync('manual'),
@@ -2742,6 +3222,8 @@ const ACTIONS = {
   saveSettings: () => {
     DB.settings.name = $('#setName').value.trim();
     DB.settings.currency = $('#setCur').value.trim() || '$';
+    DB.settings.studyWeekly = Math.max(0, num($('#setStudy').value));
+    DB.settings.exerciseWeekly = Math.max(0, num($('#setEx').value));
     DB.settings.ts = Date.now();
     saveDB(); render(); toast('Preferences saved');
   },
@@ -2753,7 +3235,7 @@ const ACTIONS = {
     const keep = DB.settings; DB = seedDB(); DB.settings = keep; saveDB(); render(); toast('Demo data loaded');
   }),
   eraseAll: () => confirmSheet('Erase everything?', 'Every project, task, transaction, journal entry, course and note is removed from this device. This cannot be undone.', 'Erase all data', () => {
-    const keep = DB.settings; DB = emptyDB(); DB.settings = keep; saveDB(); render(); toast('All data erased');
+    const keep = DB.settings; DB = emptyDB(); DB.settings = keep; UI.habitSel = 'all'; saveDB(); render(); toast('All data erased');
   })
 };
 
@@ -2782,6 +3264,9 @@ function searchAll(raw) {
   DB.notes.forEach(n => hit(n.title, n.content, n.tags, n.category) && res.push({ type: 'notes', id: n.id, title: n.title, meta: snippet(n.content, q) }));
   DB.journal.forEach(j => hit(j.title, j.content, j.tags) && res.push({ type: 'journal', id: j.id, title: j.title || fmtDate(j.date), meta: fmtDate(j.date) + ' · ' + snippet(j.content, q) }));
   DB.courses.forEach(c => hit(c.name, c.platform, c.instructor, c.notes) && res.push({ type: 'courses', id: c.id, title: c.name, meta: `${c.status} · ${coursePct(c)}%` }));
+  DB.habits.forEach(h => hit(h.name, h.category, h.notes) && res.push({ type: 'habits', id: h.id, title: h.name, meta: `${h.category || 'Habit'} · ${plural(habitStreak(h.id), 'day')} streak` }));
+  [...DB.study].sort((a, b) => String(b.date).localeCompare(String(a.date))).forEach(x => hit(x.subject, x.topic, x.kind) && res.push({ type: 'study', id: x.id, title: x.subject || 'Study session', meta: `${fmtDate(x.date)} · ${dur(x.minutes)}` }));
+  [...DB.workouts].sort((a, b) => String(b.date).localeCompare(String(a.date))).forEach(x => hit(x.focus, x.type, x.notes) && res.push({ type: 'workouts', id: x.id, title: x.focus || x.type || 'Workout', meta: `${fmtDate(x.date)} · ${x.type} · ${dur(x.minutes)}` }));
   DB.goals.forEach(g => hit(g.name) && res.push({ type: 'goals', id: g.id, title: g.name, meta: `${money(num(g.saved))} of ${money(num(g.target))}` }));
   DB.transactions.forEach(x => hit(x.description, x.category) && res.push({ type: 'transactions', id: x.id, title: x.description, meta: `${x.type} · ${money(num(x.amount), 2)} · ${fmtDate(x.date)}` }));
   return res.slice(0, 40);
@@ -2789,7 +3274,7 @@ function searchAll(raw) {
 function renderSearch() {
   const q = $('#searchInput').value, box = $('#searchResults');
   searchHits = searchAll(q);
-  if (!q.trim()) { box.innerHTML = `<p class="hint" style="padding:18px 4px">Search tasks, projects, notes, journal entries, courses, goals and transactions.</p>`; return; }
+  if (!q.trim()) { box.innerHTML = `<p class="hint" style="padding:18px 4px">Search tasks, projects, notes, journal entries, habits, study sessions, workouts, courses, goals and transactions.</p>`; return; }
   let html = '', group = '';
   searchHits.forEach((r, i) => {
     if (r.type !== group) { group = r.type; html += `<div class="sr-group">${TYPE_META[r.type].label}</div>`; }
@@ -2804,7 +3289,7 @@ function openSearch(open) {
 function openHit(r) {
   if (!r) return;
   openSearch(false);
-  const view = { tasks: 'tasks', projects: 'projects', notes: 'notes', journal: 'journal', courses: 'courses', goals: 'money', transactions: 'money' }[r.type];
+  const view = { tasks: 'tasks', projects: 'projects', notes: 'notes', journal: 'journal', courses: 'courses', habits: 'habits', study: 'study', workouts: 'exercise', goals: 'money', transactions: 'money' }[r.type];
   if (r.type === 'goals') UI.moneyTab = 'goals';
   if (r.type === 'transactions') { UI.moneyTab = 'activity'; const x = find('transactions', r.id); if (x) UI.finMonth = x.date.slice(0, 7); }
   go(view);
