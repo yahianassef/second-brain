@@ -103,7 +103,7 @@ function handle(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 7 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 8 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -115,6 +115,7 @@ function handle(e, body) {
       case 'addExpense':    return json({ ok: true, result: addExpense(body.row || {}) });
       case 'updateRow':     return json({ ok: true, result: updateRow(body) });
       case 'deleteRow':     return json({ ok: true, result: deleteRow(body) });
+      case 'setCardPaid':   return json({ ok: true, result: setCardPaid(body) });
       default:              return json({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -648,6 +649,7 @@ function readCards() {
       name: t.name,
       currency: t.currency,
       available: creditAvailable(grid),
+      statusCol: c.paid >= 0,        // false = no Payment Status column, so it can't be toggled
       debt: Math.round(debt * 100) / 100,
       charges: rows.length,
       unpaid: rows.filter(function (x) { return !x.paid; }).length,
@@ -660,6 +662,41 @@ function readCards() {
 /* ============================================================
    WRITE
    ============================================================ */
+
+/**
+ * Marks one card charge paid or unpaid.  body: { card, row, name, amount, paid }
+ * Writes "Paid" (or clears it) in the tab's Payment Status column — the same
+ * convention the sheet already uses. Marking paid also stamps an empty Payment
+ * Date; marking unpaid leaves any date you typed alone.
+ * The row number is checked against the charge's name first: if rows were
+ * inserted in the sheet since the app last synced, the charge is found again by
+ * name and amount rather than flipping whatever now sits on that row.
+ */
+function setCardPaid(body) {
+  invalidateTabs();
+  var t = cardTabs().filter(function (x) { return x.name === body.card; })[0];
+  if (!t) throw new Error('Card tab not found: ' + body.card);
+  var c = t.cols, grid = t.grid;
+  if (c.paid < 0) throw new Error('"' + body.card + '" has no Payment Status column to write to');
+  var want = String(body.name || '').trim();
+  var nameAt = function (i) { return i > t.hr && i < grid.length && cellText(grid, i, c.name) === want; };
+  var r = Number(body.row) - 1;
+  if (!want || !nameAt(r)) {
+    r = -1;
+    for (var i = t.hr + 1; i < grid.length; i++) {
+      var sameAmount = body.amount === undefined || Math.abs(asNumber(grid[i][c.amount]) - Number(body.amount)) < 0.005;
+      if (nameAt(i) && sameAmount) { r = i; break; }
+    }
+    if (r < 0) throw new Error('Could not find "' + want + '" on ' + body.card + ' — sync and try again');
+  }
+  t.sheet.getRange(r + 1, c.paid + 1).setValue(body.paid ? 'Paid' : '');
+  if (body.paid) {
+    var dateCol = colByHeaders(grid, t.hr, ['payment date', 'paid on', 'date paid'], c.name);
+    if (dateCol >= 0 && !cellText(grid, r, dateCol)) t.sheet.getRange(r + 1, dateCol + 1).setValue(new Date());
+  }
+  invalidateTabs();
+  return { card: body.card, row: r + 1, paid: !!body.paid };
+}
 
 /** Appends a row directly beneath the last filled row of a table. */
 function appendUnderTable(sheet, headerRow, firstCol, values) {
@@ -812,12 +849,13 @@ function addExpense(row) {
 
 /** Applies a batch of app-side changes. */
 function pushAll(data) {
-  var result = { fuel: 0, service: 0, expenses: 0, edits: 0, deletes: 0, brain: false };
+  var result = { fuel: 0, service: 0, expenses: 0, edits: 0, deletes: 0, cardStatus: 0, brain: false };
   (data.newFuel || []).forEach(function (r) { addFuel(r); result.fuel++; });
   (data.newService || []).forEach(function (r) { addService(r); result.service++; });
   (data.newExpenses || []).forEach(function (r) { addExpense(r); result.expenses++; });
   (data.edits || []).forEach(function (e) { updateRow(e); result.edits++; });
   (data.deletes || []).forEach(function (d) { deleteRow(d); result.deletes++; });
+  (data.cardStatus || []).forEach(function (st) { setCardPaid(st); result.cardStatus++; });
   if (data.brain) { writeBrain(data.brain); result.brain = true; }
   return result;
 }

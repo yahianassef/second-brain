@@ -150,7 +150,7 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
 (async () => {
   const src = await (await fetch('Code.gs?t=' + Date.now(), { cache: 'no-store' })).text();
   const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService',
-    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable };')
+    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable, setCardPaid };')
     (SpreadsheetApp, Session, Utilities, DriveApp, ContentService);
   api.CONFIG.SECRET = '';
   api.CONFIG.CAR_SHEET_ID = 'car';
@@ -254,6 +254,31 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
      String(byName('HSBC Credit Card').available));
   ok('credit available read from below a column heading',
      api.creditAvailable([['Payments', 'Amount', 'Credit Available', 'Notes'], ['Google One', 250, 28410, '']]) === 28410);
+
+  // ---- marking card charges paid / unpaid ----
+  const tp = () => api.readCards().find(c => c.name === 'ADCB Touchpoints Credit Card');
+  const wash = tp().rows.find(r => r.name === 'Car Wash');
+  ok('cards report whether they can be toggled', tp().statusCol === true && byName('HSBC Credit Card').statusCol === false,
+     'Touchpoints ' + tp().statusCol + ', HSBC ' + byName('HSBC Credit Card').statusCol);
+  api.setCardPaid({ card: 'ADCB Touchpoints Credit Card', row: wash.row, name: 'Car Wash', amount: 15, paid: true });
+  ok('marked paid writes "Paid" into Payment Status', touch._g[wash.row - 1][4] === 'Paid', JSON.stringify(touch._g[wash.row - 1][4]));
+  ok('marking paid stamps an empty Payment Date', touch._g[wash.row - 1][5] instanceof Date);
+  ok('the debt drops by that charge', tp().debt === 300 && tp().unpaid === 2, tp().debt + ' owed, ' + tp().unpaid + ' open');
+  const stamped = touch._g[wash.row - 1][5];
+  api.setCardPaid({ card: 'ADCB Touchpoints Credit Card', row: wash.row, name: 'Car Wash', amount: 15, paid: false });
+  ok('marked unpaid clears the status', touch._g[wash.row - 1][4] === '' && tp().debt === 315, tp().debt + ' owed');
+  ok('marking unpaid leaves the payment date alone', touch._g[wash.row - 1][5] === stamped);
+  // a row inserted in the sheet since the app last synced
+  touch._g.splice(1, 0, ['Inserted later', 5, 'Debt', D(2026, 9, 11), '', '', '', '', '', '']);
+  api.setCardPaid({ card: 'ADCB Touchpoints Credit Card', row: wash.row, name: 'Car Wash', amount: 15, paid: true });
+  ok('a stale row number still finds the right charge', touch._g[wash.row][4] === 'Paid' && touch._g[wash.row - 1][4] !== 'Paid',
+     'Car Wash now row ' + (wash.row + 1) + ': ' + JSON.stringify(touch._g[wash.row][4]) + ', the inserted row: ' + JSON.stringify(touch._g[wash.row - 1][4]));
+  let threw = '';
+  try { api.setCardPaid({ card: 'HSBC Credit Card', row: 2, name: 'Google One', amount: 250, paid: true }); } catch (e) { threw = e.message; }
+  ok('a tab with no status column refuses clearly', /no Payment Status column/.test(threw), threw);
+  threw = '';
+  try { api.setCardPaid({ card: 'ADCB Touchpoints Credit Card', row: 3, name: 'Not a real charge', amount: 1, paid: true }); } catch (e) { threw = e.message; }
+  ok('an unknown charge is never guessed at', /Could not find/.test(threw), threw);
 
   const failed = R.filter(r => r.startsWith('FAIL')).length;
   document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;

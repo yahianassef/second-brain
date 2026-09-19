@@ -323,6 +323,16 @@ mark{background:rgba(0,168,255,.3);color:#fff;border-radius:3px;padding:0 2px}
 .cc-detail{animation:ccIn .28s var(--ease)}
 @keyframes ccIn{from{opacity:0;transform:translateY(8px)}}
 .cc-swatch{width:42px;height:28px;border-radius:7px;flex-shrink:0;background:var(--cc)}
+
+/* paid / unpaid toggle on card charges */
+.pay-pill{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 13px;border-radius:20px;font-size:12.5px;font-weight:700;white-space:nowrap;border:1px solid rgba(244,63,94,.38);background:rgba(244,63,94,.12);color:#FF7A92;transition:transform .1s}
+.pay-pill::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
+.pay-pill.on{border-color:rgba(34,197,94,.38);background:rgba(34,197,94,.13);color:#4ADE80}
+.pay-pill:active{transform:scale(.92)}
+.pay-pill.busy{opacity:.7}
+.pay-pill[disabled]{opacity:.35}
+.item.paid .grow,.item.paid .amt{opacity:.5}
+.charge-end{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 </style>
 </head>
 <body>
@@ -1275,7 +1285,7 @@ const POLL_MS = 15000;      // change-probe interval while the tab is visible
 const Sheets = {
   cfg: { url: '', secret: '', auto: true, lastSync: 0 },
   data: { fuel: [], service: [], expenses: [], cards: [], meta: null },
-  out: { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [] },
+  out: { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [], cardStatus: [] },
   stamp: { car: 0, expenses: 0 },
   status: 'off', message: 'Not connected', busy: false, applying: false, timer: null, poll: null,
 
@@ -1292,7 +1302,7 @@ const Sheets = {
     try { localStorage.setItem(SHEETS_CACHE, JSON.stringify({ data: this.data, out: this.out, stamp: this.stamp })); } catch (e) { /* ignore */ }
   },
   connected() { return !!this.cfg.url; },
-  pendingCount() { return this.out.newFuel.length + this.out.newService.length + this.out.newExpenses.length + this.out.edits.length + this.out.deletes.length; },
+  pendingCount() { return this.out.newFuel.length + this.out.newService.length + this.out.newExpenses.length + this.out.edits.length + this.out.deletes.length + (this.out.cardStatus || []).length; },
 
   /* ---------- transport ----------
      GET for reads. POST uses text/plain so the browser treats it as a simple
@@ -1377,9 +1387,17 @@ const Sheets = {
 
       if (hasWrites || mode === 'manual' || mode === 'startup') {
         // one round trip: apply queued writes, store the brain, read everything back
-        const payload = { ...this.out, brain };
-        out = await this.call('push', { data: payload });
-        this.out = { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [] };
+        // Take the outbox *before* the request, so anything changed while it is in
+        // flight is kept for the next push instead of being wiped when it returns.
+        const sent = this.out;
+        this.out = { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [], cardStatus: [] };
+        try {
+          out = await this.call('push', { data: { ...sent, brain } });
+        } catch (err) {
+          Object.keys(sent).forEach(k => { this.out[k] = [...(sent[k] || []), ...(this.out[k] || [])]; });
+          this.saveCache();
+          throw err;
+        }
       } else {
         // cheap probe first — only pull when a sheet actually changed
         const s = await this.call('stamp', {}, 'GET');
@@ -1397,6 +1415,7 @@ const Sheets = {
       const d = out.data || {};
       const before = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards]);
       this.data = { fuel: d.fuel || [], service: d.service || [], expenses: d.expenses || [], cards: d.cards || [], meta: d.meta || null };
+      reapplyCardStatus();
       const sheetChanged = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards]) !== before;
 
       // merge the Second Brain database using the same engine the gist sync uses
@@ -1419,6 +1438,7 @@ const Sheets = {
       if (sheetChanged || brainChanged) { try { render(); } catch (e) { /* view not ready */ } }
       if (mode === 'manual') toast('Google Sheets synced');
       else if (sheetChanged && mode !== 'startup') toast('Updated from Google Sheets');
+      if (this.pendingCount()) this.queue(true);   // changes made while that request was in flight
     } catch (err) {
       this.status = 'error';
       this.message = err.message || 'Sync failed';
@@ -1764,6 +1784,71 @@ function cardRail(cards, selected) {
     </button>`).join('')}
   </div>`;
 }
+
+/* ---------- paying off card charges ---------- */
+/** Marks a charge paid/unpaid on screen at once, then queues the write to the sheet. */
+function setCardPaid(cardName, row, paid, quiet) {
+  const card = cardList().find(c => c.name === cardName);
+  const r = card && (card.rows || []).find(x => x.row === row);
+  if (!r) return false;
+  r.paid = !!paid;
+  r.pending = true;
+  card.debt = Math.round(sum(card.rows.filter(x => !x.paid), x => x.amount) * 100) / 100;
+  card.unpaid = card.rows.filter(x => !x.paid).length;
+  const box = Sheets.out.cardStatus || (Sheets.out.cardStatus = []);
+  const i = box.findIndex(s => s.card === cardName && s.row === row);
+  if (i >= 0) box.splice(i, 1);                     // latest tap wins; nothing piles up
+  box.push({ card: cardName, row, name: r.name, amount: r.amount, paid: !!paid });
+  Sheets.saveCache();
+  if (!quiet) Sheets.queue(true);
+  return true;
+}
+/** Fresh data from the sheet must not undo a tap that has not been sent yet. */
+function reapplyCardStatus() {
+  (Sheets.out.cardStatus || []).forEach(s => {
+    const card = cardList().find(c => c.name === s.card);
+    const r = card && (card.rows || []).find(x => x.row === s.row && x.name === s.name);
+    if (!r) return;
+    r.paid = s.paid; r.pending = true;
+    card.debt = Math.round(sum(card.rows.filter(x => !x.paid), x => x.amount) * 100) / 100;
+    card.unpaid = card.rows.filter(x => !x.paid).length;
+  });
+}
+/** Why a card can't be toggled, or '' when it can. */
+function cardStatusBlocker(card) {
+  if (!card) return 'Card not found';
+  if (card.statusCol === undefined) return 'Update the Apps Script to save payment status — see the note on the Cards page';
+  if (card.statusCol === false) return `“${card.name}” has no Payment Status column — add one to its tab to track payments`;
+  return '';
+}
+function toggleCardPaid(cardName, row) {
+  const card = cardList().find(c => c.name === cardName);
+  const why = cardStatusBlocker(card);
+  if (why) { toast(why, { tone: 'error' }); return; }
+  const r = (card.rows || []).find(x => x.row === row);
+  if (!r) return;
+  const paid = !r.paid;
+  setCardPaid(cardName, row, paid);
+  render();
+  toast(`${r.name} marked ${paid ? 'paid' : 'unpaid'}`, {
+    action: 'Undo', onAction: () => { setCardPaid(cardName, row, !paid); render(); }
+  });
+}
+function markCardAllPaid(cardName) {
+  const card = cardList().find(c => c.name === cardName);
+  const why = cardStatusBlocker(card);
+  if (why) { toast(why, { tone: 'error' }); return; }
+  const open = (card.rows || []).filter(x => !x.paid);
+  if (!open.length) { toast('Nothing open on this card'); return; }
+  open.forEach(r => setCardPaid(cardName, r.row, true, true));
+  Sheets.queue(true);
+  render();
+  toast(`${plural(open.length, 'charge')} marked paid on ${cardName}`, {
+    action: 'Undo', onAction: () => { open.forEach(r => setCardPaid(cardName, r.row, false, true)); Sheets.queue(true); render(); }
+  });
+}
+const payPill = (card, r) => `<button class="pay-pill${r.paid ? ' on' : ''}${r.pending ? ' busy' : ''}" data-act="toggleCardPaid" data-card="${esc(card.name)}" data-row="${r.row}"${card.statusCol === false ? ' disabled' : ''} title="${r.paid ? 'Paid — tap to mark unpaid' : 'Unpaid — tap to mark paid'}">${r.paid ? 'Paid' : 'Unpaid'}</button>`;
+
 // swipe the focused card left/right on touch screens
 (function () {
   let sx = 0, sy = 0, tracking = false;
@@ -2215,11 +2300,12 @@ SCREENS.money = () => {
         <div class="bar ${usage >= 90 ? 'red' : usage >= 70 ? 'amber' : ''}"><i style="width:${usage}%"></i></div></div>` : ''}
       ${cats.length ? `<div class="card">${cardHead('pie', 'Open by category')}${cats.map(([k, v]) => `<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between;font-size:13.5px;margin-bottom:6px"><span>${esc(k)}</span><span class="mono hint">${curMoney(v, c.currency)}</span></div><div class="bar"><i style="width:${v / cats[0][1] * 100}%"></i></div></div>`).join('')}</div>` : ''}
       ${seg('cardRows', [['all', 'All', all.length], ['open', 'Open', open.length], ['paid', 'Paid', paid.length]])}
-      <div class="card"><div class="list">${rows.length ? rows.map(r => `<div class="item"${r.paid ? ' style="opacity:.55"' : ''}>
+      ${c.statusCol === undefined ? `<p class="hint" style="margin:0 4px 10px">Update the Apps Script to save Paid / Unpaid to your sheet.</p>` : c.statusCol === false ? `<p class="hint" style="margin:0 4px 10px">This tab has no Payment Status column, so charges can't be marked paid.</p>` : `<div class="row" style="justify-content:space-between;margin:0 2px 10px"><span class="hint">Tap a status to change it</span>${open.length ? `<button class="btn btn-ghost sm" data-act="markCardAllPaid" data-card="${esc(c.name)}">${icon('check', 14)} Mark all paid</button>` : ''}</div>`}
+      <div class="card"><div class="list">${rows.length ? rows.map(r => `<div class="item${r.paid ? ' paid' : ''}">
         <span class="tx-ico Expense">${icon('wallet', 16)}</span>
-        <div class="grow"><div class="t">${esc(r.name)}${r.paid ? ' <span class="chip green">paid</span>' : ''}</div>
+        <div class="grow"><div class="t">${esc(r.name)}</div>
           <div class="s">${esc(r.category || '')}${r.date ? (r.category ? ' · ' : '') + fmtDate(r.date) : ''}</div></div>
-        <span class="amt">${curMoney(r.amount, c.currency)}</span></div>`).join('')
+        <div class="charge-end"><span class="amt">${curMoney(r.amount, c.currency)}</span>${payPill(c, r)}</div></div>`).join('')
         : emptyState('check', UI.cardRows === 'paid' ? 'Nothing marked paid' : 'No open charges', 'Switch the filter to see the rest.')}</div></div>
     </div>
     <p class="hint" style="margin-top:4px">Card charges stay out of expense totals — the payment you copy into a month tab is the expense.</p>`;
@@ -2556,6 +2642,19 @@ const ACTIONS = {
   set: el => { UI[el.dataset.key] = el.dataset.val; render(); },
   pickCard: el => pickCard(el.dataset.val),
   cycleCard: el => cycleCard(Number(el.dataset.val)),
+  toggleCardPaid: el => toggleCardPaid(el.dataset.card, Number(el.dataset.row)),
+  markCardAllPaid: el => {
+    // two taps, so a stray click can't clear a whole card
+    if (el.dataset.armed !== '1') {
+      el.dataset.armed = '1';
+      const label = el.innerHTML;
+      el.innerHTML = 'Tap again to confirm';
+      el.classList.add('btn-danger');
+      setTimeout(() => { if (el.isConnected && el.dataset.armed === '1') { el.dataset.armed = ''; el.innerHTML = label; el.classList.remove('btn-danger'); } }, 3500);
+      return;
+    }
+    markCardAllPaid(el.dataset.card);
+  },
   month: el => { UI.finMonth = shiftMonth(UI.finMonth, Number(el.dataset.val)); render(); },
   syncPanel: () => Sync.openPanel(),
   sheetsPanel: () => Sheets.openPanel(),
