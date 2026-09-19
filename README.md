@@ -1,8 +1,8 @@
 # Second Brain
 
 A personal operating system that runs entirely in the browser — no server, no build step, no framework.
-Projects, tasks, finances, journal, courses, notes, and a Car Maintenance section that reads and writes
-your Google Sheets.
+Projects, tasks, habits, studying, exercising, finances, journal, courses, notes, and a Car Maintenance
+section that reads and writes your Google Sheets.
 
 | | |
 |---|---|
@@ -34,9 +34,26 @@ add on one device shows up on the others.
 - **Car Maintenance** — **Fuel** and **Service** pages, live from your car spreadsheet. Fuel and service can
   sit on separate tabs or be stacked on one; each table is found by its header row, so a service log on its
   own tab is read, and new entries are written back to the tab they belong on.
+- **Habits** — a daily checklist, per-habit colours and weekly targets (*days per week*), current and best
+  streaks, a 30-day keep rate, and a **calendar heatmap** of every habit at once or one habit on its own.
+  Pick a single habit and any day on the map becomes a tick box, so a missed evening can be filled in later
+- **Studying** — log a session (subject, minutes, session type, optional course link, what you covered),
+  and the section keeps the week against your hours-per-week target, the study streak, a subject breakdown
+  for the month and a **heatmap of the days you studied**. Clicking an empty day opens a session prefilled
+  with that date
+- **Exercising** — the same shape for workouts (type, focus, minutes, intensity, optional distance), with
+  workouts-per-week against target, streaks and rest days, the month's split by workout type and its own
+  **heatmap**
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
 - **Courses** — lessons completed, progress, deadlines, resources
 - **Notes** — categories, tags, pinning, markdown-ish formatting
+
+Every heatmap has a **Month** and a **Year** view: the month view is a calendar of the days themselves, and
+the year view is the same shading across twelve mini months. Shading is relative — the busiest day in view
+is the brightest — and the weekly targets for studying and exercising live in **Settings**.
+
+On the phone build, Habits, Studying and Exercising sit under **More**, with today's checklist and both
+quick-log buttons on the Home screen.
 
 ---
 
