@@ -6,10 +6,15 @@ section that reads and writes your Google Sheets.
 
 | | |
 |---|---|
-| **Live app** | https://yahianassef.github.io/second-brain/ |
+| **Live site** | https://yahianassef.github.io/second-brain/ |
+| **Landing page** | [`index.html`](index.html) — what the site opens on, with a link into the app |
 | **Desktop build** | [`app.html`](app.html) — sidebar layout, kanban board, tables |
 | **Phone build** | [`m.html`](m.html) — bottom tabs, sheets, big tap targets |
 | **Sheets API** | [`apps-script/Code.gs`](apps-script/Code.gs) — deploy once, see below |
+
+The landing page sends you to the build that fits your screen. **Skip this page next time** on it stores a
+flag in your browser, after which the site opens the app directly — add `?stay=1` to the address to see the
+landing page again.
 
 Both builds share the same data model, the same form schemas and the same sync engine, so anything you
 add on one device shows up on the others.

@@ -5,53 +5,716 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#07090D">
-<title>Second Brain</title>
+<title>Second Brain — your personal operating system</title>
+<meta name="description" content="Projects, tasks, habits, studying, exercising, finances, journal, courses and notes — one HTML file that runs in your browser, syncs across your devices and keeps your data yours.">
+<meta property="og:title" content="Second Brain">
+<meta property="og:description" content="A personal operating system that runs entirely in your browser. No server, no accounts, no analytics.">
+<meta property="og:type" content="website">
 <style>
-  :root{color-scheme:dark}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{min-height:100vh;display:grid;place-items:center;padding:24px;background:
-      radial-gradient(800px 420px at 50% -10%,rgba(0,102,255,.16),transparent 65%),#07090D;
-    color:#E8ECF3;font-family:"Inter","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;text-align:center}
-  .mark{width:64px;height:64px;border-radius:20px;margin:0 auto 20px;display:grid;place-items:center;
-    background:linear-gradient(135deg,#0057E6,#00A8FF);box-shadow:0 14px 40px -12px rgba(0,140,255,.7)}
-  h1{font-size:28px;letter-spacing:-.035em;margin-bottom:8px}
-  p{color:#A3ADBF;font-size:14.5px;max-width:420px;margin:0 auto 28px;line-height:1.6}
-  .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-  a{display:inline-flex;align-items:center;gap:9px;padding:13px 22px;border-radius:13px;font-weight:600;
-    font-size:14.5px;text-decoration:none;transition:transform .12s,box-shadow .2s}
-  a:active{transform:scale(.97)}
-  .primary{background:linear-gradient(180deg,#1A7BFF,#0066FF);color:#fff;box-shadow:0 8px 22px -10px rgba(0,102,255,.9)}
-  .ghost{background:#151A24;border:1px solid #2A3345;color:#A3ADBF}
-  .hint{margin-top:26px;font-size:12.5px;color:#6B7589}
+/* =========================================================
+   1. TOKENS — the same palette the app is built from
+   ========================================================= */
+:root{
+  --bg:#07090D;
+  --surface:#10141C; --surface-2:#151A24; --surface-3:#1B2130;
+  --border:#1E2532; --border-2:#2A3345;
+  --text:#E8ECF3; --text-2:#A3ADBF; --text-3:#6B7589;
+  --blue:#0066FF; --blue-2:#00A8FF; --blue-soft:rgba(0,120,255,.14); --blue-glow:rgba(0,140,255,.35);
+  --green:#22C55E; --amber:#F5A524; --violet:#8B5CF6; --rose:#F43F5E;
+  --radius:16px;
+  --font:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono","Cascadia Code","SF Mono",ui-monospace,Consolas,monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --maxw:1180px;
+}
+
+/* =========================================================
+   2. BASE
+   ========================================================= */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  font-family:var(--font);background:var(--bg);color:var(--text);font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+/* Ambient light: two soft pools of blue, plus a faint grid that fades out */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(900px 500px at 50% -8%,rgba(0,102,255,.20),transparent 60%),
+    radial-gradient(700px 420px at 92% 12%,rgba(0,168,255,.10),transparent 60%);
+}
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+  background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);
+  background-size:64px 64px;
+  -webkit-mask-image:radial-gradient(1100px 620px at 50% 0%,#000,transparent 72%);
+  mask-image:radial-gradient(1100px 620px at 50% 0%,#000,transparent 72%);
+}
+main,header,footer{position:relative;z-index:1}
+a{color:inherit;text-decoration:none}
+svg{flex-shrink:0}
+::selection{background:rgba(0,168,255,.35)}
+:focus-visible{outline:2px solid var(--blue-2);outline-offset:3px;border-radius:6px}
+.wrap{width:100%;max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.mono{font-family:var(--mono)}
+
+/* =========================================================
+   3. TYPE
+   ========================================================= */
+h1,h2,h3,h4{letter-spacing:-.035em;line-height:1.1;font-weight:700}
+h1{font-size:clamp(36px,5.2vw,58px)}
+h2{font-size:clamp(27px,3.6vw,40px)}
+h3{font-size:19px;letter-spacing:-.02em}
+.grad{background:linear-gradient(100deg,#7CC8FF 0%,#0A84FF 55%,#8B5CF6 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.eyebrow{font-size:11.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--blue-2);font-weight:650}
+.lede{color:var(--text-2);font-size:clamp(15.5px,1.6vw,18.5px);max-width:58ch}
+.muted{color:var(--text-3)}
+.sec-head{max-width:64ch;margin-bottom:38px}
+.sec-head h2{margin:12px 0 14px}
+
+/* =========================================================
+   4. BUTTONS + CHIPS
+   ========================================================= */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  padding:13px 22px;border-radius:13px;font-weight:600;font-size:15px;border:1px solid transparent;
+  transition:transform .14s var(--ease),box-shadow .22s,background .2s,border-color .2s;white-space:nowrap;
+}
+.btn:active{transform:scale(.975)}
+.btn-primary{background:linear-gradient(180deg,#1A7BFF,#0066FF);color:#fff;box-shadow:0 12px 30px -12px rgba(0,102,255,.95),inset 0 1px 0 rgba(255,255,255,.22)}
+.btn-primary:hover{box-shadow:0 16px 40px -12px rgba(0,120,255,1),inset 0 1px 0 rgba(255,255,255,.3)}
+.btn-ghost{background:var(--surface-2);border-color:var(--border-2);color:var(--text-2)}
+.btn-ghost:hover{color:var(--text);border-color:#3A4458;background:var(--surface-3)}
+.btn.sm{padding:9px 15px;font-size:13.5px;border-radius:11px}
+.chip{
+  display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:99px;
+  font-size:12.5px;font-weight:550;color:var(--text-2);
+  background:rgba(0,120,255,.08);border:1px solid rgba(0,168,255,.22);
+}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--blue-2);box-shadow:0 0 10px var(--blue-2)}
+
+/* =========================================================
+   5. HEADER
+   ========================================================= */
+header{position:sticky;top:0;z-index:40;transition:background .3s,border-color .3s,backdrop-filter .3s;border-bottom:1px solid transparent}
+header.stuck{background:rgba(7,9,13,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom-color:var(--border)}
+.bar{display:flex;align-items:center;gap:14px;height:68px}
+.brand{display:flex;align-items:center;gap:11px;margin-right:auto}
+.mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;
+  background:linear-gradient(135deg,#0057E6,#00A8FF);box-shadow:0 8px 24px -8px var(--blue-glow),inset 0 1px 0 rgba(255,255,255,.3)}
+.brand b{font-size:16px;letter-spacing:-.02em}
+.navlinks{display:flex;gap:4px}
+.navlinks a{padding:8px 13px;border-radius:10px;font-size:14px;color:var(--text-2);transition:color .18s,background .18s}
+.navlinks a:hover{color:var(--text);background:var(--surface-2)}
+
+/* =========================================================
+   6. HERO
+   ========================================================= */
+.hero{padding:clamp(48px,8vw,104px) 0 clamp(40px,6vw,72px)}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);gap:clamp(30px,5vw,64px);align-items:center}
+.hero h1{margin:18px 0 20px}
+.hero .lede{margin-bottom:30px}
+.cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.reassure{display:flex;gap:18px;flex-wrap:wrap;margin-top:26px;font-size:13px;color:var(--text-3)}
+.reassure span{display:inline-flex;align-items:center;gap:7px}
+.reassure svg{color:var(--green)}
+.skip{margin-top:20px;font-size:12.5px;color:var(--text-3)}
+.skip button{font:inherit;color:var(--blue-2);background:none;border:0;cursor:pointer;padding:0;border-bottom:1px dashed rgba(0,168,255,.45)}
+.skip button:hover{color:#7CC8FF}
+
+/* --- the app mock --- */
+.mock-wrap{position:relative;perspective:1400px}
+.mock-glow{position:absolute;inset:4% 0 -12% 0;background:radial-gradient(60% 55% at 50% 45%,rgba(0,110,255,.34),transparent 72%);filter:blur(34px);z-index:0}
+.mock{
+  position:relative;z-index:1;border-radius:18px;overflow:hidden;background:var(--surface);
+  border:1px solid var(--border-2);box-shadow:0 44px 90px -40px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.03) inset;
+  transform:rotateX(6deg) rotateY(-7deg) translateZ(0);transform-origin:70% 50%;
+  transition:transform .7s var(--ease);
+}
+.mock-wrap:hover .mock{transform:rotateX(2deg) rotateY(-2deg)}
+.mock-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:#0A0D13;border-bottom:1px solid var(--border)}
+.mock-bar i{width:9px;height:9px;border-radius:50%;background:#2A3345;display:block}
+.mock-bar i:first-child{background:#3A4458}
+.mock-bar span{margin-left:8px;font-size:10.5px;color:var(--text-3);font-family:var(--mono)}
+.mock-body{display:grid;grid-template-columns:118px minmax(0,1fr);min-height:330px}
+.mock-side{background:linear-gradient(180deg,#0A0D13,#07090D);border-right:1px solid var(--border);padding:12px 9px;display:flex;flex-direction:column;gap:3px}
+.mock-side .lbl{font-size:8.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--text-3);padding:10px 8px 4px;font-weight:650}
+.mside{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;font-size:11px;color:var(--text-2)}
+.mside svg{width:13px;height:13px}
+.mside.on{background:linear-gradient(90deg,rgba(0,102,255,.24),rgba(0,102,255,.03));color:#fff}
+.mside.on svg{color:var(--blue-2)}
+.mock-main{padding:16px;display:flex;flex-direction:column;gap:13px;min-width:0}
+.mock-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.mtile{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:10px}
+.mtile .k{font-size:8.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);font-weight:600}
+.mtile .v{font-size:19px;font-weight:700;letter-spacing:-.03em;margin-top:5px;line-height:1}
+.mtile .s{font-size:9.5px;color:var(--text-3);margin-top:3px}
+.mcard{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px}
+.mcard-h{display:flex;align-items:center;justify-content:space-between;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);font-weight:650;margin-bottom:10px}
+.mrow{display:flex;align-items:center;gap:9px;padding:5px 0}
+.mrow + .mrow{border-top:1px solid var(--border)}
+.mchk{width:17px;height:17px;border-radius:6px;border:1.5px solid #3A4458;display:grid;place-items:center;flex-shrink:0;color:transparent}
+.mchk.on{background:var(--c);border-color:transparent;color:#04121F}
+.mchk svg{width:11px;height:11px}
+.mrow .t{font-size:11.5px;font-weight:550;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mdots{display:flex;gap:3px}
+.mdots i{width:9px;height:9px;border-radius:3px;background:var(--surface-3);display:block}
+.mdots i.on{background:var(--c)}
+
+/* =========================================================
+   7. HEATMAP (shared by the mock and the live demo)
+   ========================================================= */
+.cal{display:flex;flex-direction:column;gap:6px}
+.cal-head,.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.cal-head span{font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-3);text-align:center;font-weight:650}
+.cal-day{aspect-ratio:1;border-radius:7px;background:var(--surface-3);display:grid;place-items:center;
+  font-family:var(--mono);font-size:10px;color:var(--text-3);border:1px solid transparent;
+  transition:transform .16s var(--ease),box-shadow .16s,background .25s}
+.cal-day.pad{background:transparent}
+.cal-day.lit{color:#03101C;font-weight:700}
+.cal-day.today{border-color:var(--blue-2);box-shadow:0 0 0 3px rgba(0,168,255,.13)}
+.cal-day.future{opacity:.32}
+.demo .cal-day{border-radius:9px;font-size:12px;cursor:pointer}
+.demo .cal-day.future{opacity:.5;cursor:default}
+.demo .cal-head span{font-size:10.5px}
+.demo .cal-day:not(.pad):not(.future):hover{transform:translateY(-2px);box-shadow:0 10px 20px -10px rgba(0,0,0,.95)}
+.heat-legend{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-3)}
+.heat-legend i{width:12px;height:12px;border-radius:4px;display:block}
+
+/* =========================================================
+   8. SECTIONS
+   ========================================================= */
+section{padding:clamp(56px,8vw,104px) 0}
+.card{
+  background:linear-gradient(180deg,var(--surface),#0D1118);border:1px solid var(--border);
+  border-radius:var(--radius);padding:24px;transition:transform .24s var(--ease),border-color .24s,box-shadow .24s;
+}
+.card:hover{transform:translateY(-3px);border-color:rgba(0,168,255,.32);box-shadow:0 22px 46px -26px rgba(0,120,255,.7)}
+.ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;margin-bottom:15px;
+  background:var(--blue-soft);color:var(--blue-2);box-shadow:inset 0 0 0 1px rgba(0,168,255,.2)}
+.ico.green{background:rgba(34,197,94,.12);color:#4ADE80;box-shadow:inset 0 0 0 1px rgba(34,197,94,.22)}
+.ico.violet{background:rgba(139,92,246,.14);color:#B69CFF;box-shadow:inset 0 0 0 1px rgba(139,92,246,.26)}
+.ico.amber{background:rgba(245,165,36,.12);color:#FBBF4E;box-shadow:inset 0 0 0 1px rgba(245,165,36,.22)}
+.card h3{margin-bottom:7px}
+.card p{font-size:14px;color:var(--text-2)}
+.grid{display:grid;gap:16px}
+.g3{grid-template-columns:repeat(auto-fit,minmax(255px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+
+/* routine spotlight */
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.92fr);gap:clamp(26px,4vw,52px);align-items:center}
+.demo-card{background:linear-gradient(180deg,var(--surface),#0D1118);border:1px solid var(--border-2);border-radius:var(--radius);padding:22px;box-shadow:0 30px 70px -40px rgba(0,0,0,.9)}
+.demo-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.demo-head .t{font-size:13px;font-weight:650;display:flex;align-items:center;gap:9px}
+.demo-head .t svg{color:var(--violet)}
+.demo-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;flex-wrap:wrap;font-size:12px;color:var(--text-3)}
+.feature-list{list-style:none;display:flex;flex-direction:column;gap:16px;margin-top:28px}
+.feature-list li{display:flex;gap:13px;align-items:flex-start}
+.feature-list .b{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--border-2);color:var(--blue-2)}
+.feature-list b{display:block;font-size:14.5px;letter-spacing:-.01em;margin-bottom:2px}
+.feature-list span{font-size:13.5px;color:var(--text-2)}
+
+/* sync */
+.flow{display:flex;align-items:center;justify-content:center;gap:clamp(8px,2vw,20px);flex-wrap:wrap;margin-top:34px}
+.node{display:flex;flex-direction:column;align-items:center;gap:9px;min-width:92px}
+.node .b{width:56px;height:56px;border-radius:17px;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--border-2);color:var(--text-2)}
+.node.mid .b{background:linear-gradient(135deg,#0057E6,#00A8FF);border-color:transparent;color:#fff;box-shadow:0 14px 34px -14px var(--blue-glow)}
+.node span{font-size:12px;color:var(--text-3)}
+.link-line{flex:1;min-width:34px;max-width:110px;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--border-2) 20%,var(--blue) 50%,var(--border-2) 80%,transparent);position:relative;overflow:hidden}
+.link-line::after{content:'';position:absolute;top:0;left:-40%;width:40%;height:100%;background:linear-gradient(90deg,transparent,var(--blue-2),transparent);animation:slide 2.6s linear infinite}
+@keyframes slide{to{left:110%}}
+
+/* privacy */
+.priv{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin-top:30px}
+.priv div{padding:18px;border-radius:13px;background:var(--surface);border:1px solid var(--border)}
+.priv b{display:block;font-size:14.5px;margin-bottom:5px}
+.priv p{font-size:13px;color:var(--text-2)}
+
+/* closing cta */
+.final{text-align:center;padding:clamp(52px,7vw,92px) 24px;border-radius:24px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,rgba(0,102,255,.16),rgba(0,102,255,.02)),var(--surface);border:1px solid rgba(0,168,255,.28)}
+.final::after{content:'';position:absolute;inset:-40% 20% 60%;background:radial-gradient(closest-side,rgba(0,140,255,.3),transparent);filter:blur(40px);pointer-events:none}
+.final > *{position:relative}
+.final h2{margin-bottom:14px}
+.final .lede{margin:0 auto 28px}
+.final .cta{justify-content:center}
+
+/* footer */
+footer{border-top:1px solid var(--border);padding:34px 0 46px;font-size:13.5px;color:var(--text-3)}
+.foot{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
+.foot a{color:var(--text-2)}
+.foot a:hover{color:var(--blue-2)}
+.foot .sp{margin-left:auto}
+
+/* =========================================================
+   9. MOTION
+   ========================================================= */
+.rise.armed{opacity:0;transform:translateY(22px)}
+.rise.armed.in{opacity:1;transform:none;transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.rise.armed.d1.in{transition-delay:.07s}.rise.armed.d2.in{transition-delay:.14s}.rise.armed.d3.in{transition-delay:.21s}
+@media print{
+  .rise.armed{opacity:1!important;transform:none!important}
+  body::before,body::after,.mock-glow{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .rise.armed{opacity:1;transform:none}
+  .mock{transform:none}
+}
+
+/* =========================================================
+   10. RESPONSIVE
+   ========================================================= */
+@media (max-width:980px){
+  .hero-grid,.split{grid-template-columns:minmax(0,1fr)}
+  .mock{transform:none}
+  .mock-wrap{max-width:560px}
+  .split .demo-card{order:-1}
+  .navlinks{display:none}
+}
+@media (max-width:640px){
+  .wrap{padding:0 18px}
+  /* twelve cards in one column makes for a very long scroll on a phone */
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+  .g4 .card{padding:15px}
+  .g4 .card h3{font-size:16px}
+  .g4 .card p{font-size:12.5px;line-height:1.5}
+  .g4 .ico{width:34px;height:34px;border-radius:10px;margin-bottom:11px}
+  .bar{height:62px}
+  .brand b{font-size:15px}
+  .mock-body{grid-template-columns:86px minmax(0,1fr)}
+  .mock-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mock-tiles .mtile:last-child{display:none}
+  .cta .btn{flex:1;min-width:150px}
+  .final{border-radius:18px}
+}
+@media (max-width:420px){
+  .mock-side{display:none}
+  .mock-body{grid-template-columns:minmax(0,1fr)}
+}
 </style>
 </head>
 <body>
-  <main>
-    <div class="mark">
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
-        <circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="13" r="2.4"/>
-        <circle cx="6.5" cy="19" r="2"/><circle cx="18" cy="18.5" r="2"/>
-        <path d="M7.8 8.4 10.3 11.4M16.4 7.6l-2.8 3.6M10.5 14.9l-2.5 2.6M13.9 14.6l2.7 2.3"/>
-      </svg>
+
+<header id="top">
+  <div class="wrap bar">
+    <a class="brand" href="#top" aria-label="Second Brain, back to top">
+      <span class="mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="13" r="2.4"/>
+          <circle cx="6.5" cy="19" r="2"/><circle cx="18" cy="18.5" r="2"/>
+          <path d="M7.8 8.4 10.3 11.4M16.4 7.6l-2.8 3.6M10.5 14.9l-2.5 2.6M13.9 14.6l2.7 2.3"/>
+        </svg>
+      </span>
+      <b>Second Brain</b>
+    </a>
+    <nav class="navlinks" aria-label="Sections">
+      <a href="#sections">What's inside</a>
+      <a href="#routine">Routine</a>
+      <a href="#sync">Syncing</a>
+      <a href="#privacy">Privacy</a>
+    </nav>
+    <a class="btn btn-primary sm" data-app href="app.html">Open the app</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="chip rise"><span class="dot"></span>One file · no server · no account</span>
+        <h1 class="rise d1">Your whole life,<br><span class="grad">in one tab.</span></h1>
+        <p class="lede rise d2">Projects, tasks, habits, studying, exercising, finances, journal, courses and notes —
+          in a single HTML file that runs in your browser, works offline, and syncs to your other devices
+          through your own Google Sheet or a private gist.</p>
+        <div class="cta rise d3">
+          <a class="btn btn-primary" data-app href="app.html">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 13.5h7.5L10.5 22 20 10.5h-7.5z"/></svg>
+            Open the app
+          </a>
+          <a class="btn btn-ghost" href="m.html">Phone version</a>
+          <a class="btn btn-ghost" href="https://github.com/yahianassef/second-brain" rel="noopener">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2A10 10 0 0 0 8.8 21.5c.5.1.7-.2.7-.5v-1.7C6.7 19.9 6.1 18 6.1 18c-.4-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.7.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .3.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg>
+            Source
+          </a>
+        </div>
+        <div class="reassure rise d3">
+          <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19.5 7"/></svg>Works offline</span>
+          <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19.5 7"/></svg>No analytics, ever</span>
+          <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19.5 7"/></svg>Your data stays yours</span>
+        </div>
+        <p class="skip" hidden id="skipWrap"><button type="button" id="skipBtn">Skip this page next time</button> — go straight to the app whenever you open this site.</p>
+      </div>
+
+      <!-- app mock -->
+      <div class="mock-wrap rise d2">
+        <div class="mock-glow" aria-hidden="true"></div>
+        <div class="mock" role="img" aria-label="The Second Brain dashboard: stat tiles, today's habits with a week of progress dots, and a month heatmap.">
+          <div class="mock-bar"><i></i><i></i><i></i><span>second-brain · dashboard</span></div>
+          <div class="mock-body">
+            <aside class="mock-side" aria-hidden="true">
+              <div class="lbl">Overview</div>
+              <div class="mside on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</div>
+              <div class="lbl">Routine</div>
+              <div class="mside"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5A4.5 4.5 0 0 1 8.5 6H20m0 0-3.5-3.5M20 6l-3.5 3.5"/><path d="M20 13.5A4.5 4.5 0 0 1 15.5 18H4m0 0 3.5 3.5M4 18l3.5-3.5"/></svg>Habits</div>
+              <div class="mside"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7.6C10.4 6.1 8.2 5.4 4 5.4V18c4.2 0 6.4.7 8 2.2 1.6-1.5 3.8-2.2 8-2.2V5.4c-4.2 0-6.4.7-8 2.2z"/><path d="M12 7.6v12.6"/></svg>Studying</div>
+              <div class="mside"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 5.5v13M3.5 8.5v7M17.5 5.5v13M20.5 8.5v7M6.5 12h11"/></svg>Exercising</div>
+              <div class="lbl">Life</div>
+              <div class="mside"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2.5"/><path d="M3 6.5A2.5 2.5 0 0 0 5.5 9H19a2 2 0 0 1 2 2v1.5"/><path d="M21 12.5h-4a2 2 0 0 0 0 4h4z"/></svg>Finances</div>
+            </aside>
+            <div class="mock-main">
+              <div class="mock-tiles">
+                <div class="mtile"><div class="k">Open tasks</div><div class="v">9</div><div class="s">2 due today</div></div>
+                <div class="mtile"><div class="k">Study · week</div><div class="v">6h 30m</div><div class="s">65% of target</div></div>
+                <div class="mtile"><div class="k">Streak</div><div class="v">20d</div><div class="s">personal best</div></div>
+              </div>
+              <div class="mcard">
+                <div class="mcard-h"><span>Today's habits</span><span class="mono">3/5</span></div>
+                <div id="mockHabits"></div>
+              </div>
+              <div class="mcard">
+                <div class="mcard-h"><span>Days you worked out</span><span class="mono" id="mockMonth"></span></div>
+                <div id="mockHeat"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <h1>Second Brain</h1>
-    <p>Projects, tasks, finances, journal, courses, notes and car maintenance — synced across every device.</p>
-    <div class="row">
-      <a class="primary" id="go" href="app.html">Open the app</a>
-      <a class="ghost" href="m.html">Phone version</a>
-      <a class="ghost" href="app.html">Desktop version</a>
+  </section>
+
+  <!-- ============ SECTIONS ============ -->
+  <section id="sections">
+    <div class="wrap">
+      <div class="sec-head rise">
+        <span class="eyebrow">What's inside</span>
+        <h2>Everything you track, in one place.</h2>
+        <p class="lede">Each one is a proper tool, not a placeholder — and they all share the same data,
+          the same forms and the same sync engine, so anything you add on one device shows up on the others.</p>
+      </div>
+      <div class="grid g4" id="sectionGrid"></div>
     </div>
-    <p class="hint">Taking you to the right version automatically…</p>
-  </main>
+  </section>
+
+  <!-- ============ ROUTINE SPOTLIGHT ============ -->
+  <section id="routine">
+    <div class="wrap split">
+      <div class="rise">
+        <span class="eyebrow">Habits · Studying · Exercising</span>
+        <h2 style="margin:12px 0 14px">See the month you actually had.</h2>
+        <p class="lede">Every routine section draws a calendar heatmap: the brighter the day, the more you did.
+          A glance tells you which weeks held and which ones slipped — no scrolling through a list to find out.</p>
+        <ul class="feature-list">
+          <li>
+            <span class="b"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19.5 7"/></svg></span>
+            <span><b>Tick a day, any day</b>Forgot to check off last Tuesday? Click it on the map and the streak repairs itself.</span>
+          </li>
+          <li>
+            <span class="b"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/></svg></span>
+            <span><b>Month or year</b>One month as a real calendar, or the whole year across twelve mini months.</span>
+          </li>
+          <li>
+            <span class="b"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4.4 0 7-3 7-6.8 0-4.7-4.2-6.7-5-11.2-2.9 1.9-5.4 5.3-5.2 8.6C7.6 11.7 7 10.6 6.9 9 5.6 10.4 5 12.4 5 14.7 5 19 7.9 22 12 22z"/></svg></span>
+            <span><b>Streaks that mean something</b>Current run, personal best, and how much of the last 30 days you kept — per habit.</span>
+          </li>
+          <li>
+            <span class="b"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg></span>
+            <span><b>Weekly targets</b>Hours a week for studying, sessions a week for training — with a ring that fills as you go.</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="demo-card rise d1">
+        <div class="demo-head">
+          <span class="t">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5A4.5 4.5 0 0 1 8.5 6H20m0 0-3.5-3.5M20 6l-3.5 3.5"/><path d="M20 13.5A4.5 4.5 0 0 1 15.5 18H4m0 0 3.5 3.5M4 18l3.5-3.5"/></svg>
+            Read 20 pages
+          </span>
+          <span class="mono" style="font-size:11.5px;color:var(--text-3)" id="demoMonth"></span>
+        </div>
+        <div class="demo" id="demoHeat"></div>
+        <div class="demo-foot">
+          <span id="demoCount">Try it — click a day</span>
+          <span class="heat-legend">Less
+            <i style="background:var(--surface-3)"></i><i style="background:#2E2461"></i><i style="background:#4B36A8"></i><i style="background:#7C56E8"></i><i style="background:#B49BFF"></i>
+            More</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SYNC ============ -->
+  <section id="sync">
+    <div class="wrap">
+      <div class="sec-head rise">
+        <span class="eyebrow">Syncing</span>
+        <h2>Your devices, your accounts.</h2>
+        <p class="lede">There is no backend to sign up for. Pick whichever path suits you — or both — and the
+          apps stay in step item by item, with the most recently edited copy winning.</p>
+      </div>
+      <div class="grid g3">
+        <div class="card rise">
+          <div class="ico green"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></div>
+          <h3>Google Sheets</h3>
+          <p>A script you deploy once, under your own account, turns your spreadsheets into the app's API.
+            Expenses, credit cards, fuel and service read and write straight to the tabs you already keep.</p>
+        </div>
+        <div class="card rise d1">
+          <div class="ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 19h9a4 4 0 0 0 .4-8A5.5 5.5 0 0 0 6.3 9.6 3.8 3.8 0 0 0 7.5 19z"/><path d="M12 15.5V9m0 0-2.2 2.2M12 9l2.2 2.2"/></svg></div>
+          <h3>A private gist</h3>
+          <p>No Google account needed. One secret GitHub gist keeps every device in step, merges edits per item
+            and remembers deletions, so nothing you removed can quietly come back.</p>
+        </div>
+        <div class="card rise d2">
+          <div class="ico amber"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg></div>
+          <h3>Plain files, always</h3>
+          <p>A full JSON backup in one click, and a CSV per section whose columns line up with the companion
+            workbook. Nothing is locked in a format only this app can read.</p>
+        </div>
+      </div>
+
+      <div class="flow rise d1" aria-hidden="true">
+        <div class="node"><span class="b"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></span><span>Phone</span></div>
+        <div class="link-line"></div>
+        <div class="node mid"><span class="b"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 19h9a4 4 0 0 0 .4-8A5.5 5.5 0 0 0 6.3 9.6 3.8 3.8 0 0 0 7.5 19z"/></svg></span><span>Your sheet or gist</span></div>
+        <div class="link-line"></div>
+        <div class="node"><span class="b"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span><span>Desktop</span></div>
+      </div>
+      <p class="muted rise d2" style="text-align:center;margin-top:18px;font-size:13px">
+        Edits reach your other devices in about fifteen seconds.</p>
+    </div>
+  </section>
+
+  <!-- ============ PRIVACY ============ -->
+  <section id="privacy">
+    <div class="wrap">
+      <div class="sec-head rise">
+        <span class="eyebrow">Privacy</span>
+        <h2>Nothing phones home.</h2>
+        <p class="lede">The app is one static file. It talks to exactly two hosts, and only the ones you
+          connect yourself: GitHub, and your own Apps Script deployment.</p>
+      </div>
+      <div class="priv rise d1">
+        <div><b>No analytics</b><p>No trackers, no pixels, no telemetry of any kind.</p></div>
+        <div><b>No third-party scripts</b><p>No CDN, no fonts fetched, no frameworks. Everything is in the file.</p></div>
+        <div><b>Local first</b><p>Your data lives in your browser's storage and in whichever sync you set up.</p></div>
+        <div><b>Tokens stay put</b><p>Kept in your browser only — never committed, never sent anywhere else.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FINAL CTA ============ -->
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="final rise">
+        <h2>Open it and start with one thing.</h2>
+        <p class="lede">A task for today, or a habit you want to keep. The rest of it will be waiting when you need it.</p>
+        <div class="cta">
+          <a class="btn btn-primary" data-app href="app.html">Open the app</a>
+          <a class="btn btn-ghost" href="m.html">Phone version</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>Second Brain — built for one person, in the open.</span>
+    <span class="sp"></span>
+    <a href="app.html">Desktop</a>
+    <a href="m.html">Phone</a>
+    <a href="https://github.com/yahianassef/second-brain" rel="noopener">GitHub</a>
+    <a href="https://github.com/yahianassef/second-brain#readme" rel="noopener">Docs</a>
+  </div>
+</footer>
+
 <script>
-  // Send phones to the touch-first build, everything else to the full desktop app.
-  // ?stay=1 keeps this launcher on screen.
-  var phone = window.matchMedia('(max-width: 760px)').matches || /Mobi|Android|iPhone/.test(navigator.userAgent);
-  var target = phone ? 'm.html' : 'app.html';
-  document.getElementById('go').setAttribute('href', target);
-  if (!/[?&]stay=1/.test(location.search)) {
-    location.replace(target + location.hash);
+'use strict';
+/* ---------- tiny helpers ---------- */
+var $ = function (s, el) { return (el || document).querySelector(s); };
+var pad = function (n) { return String(n).padStart(2, '0'); };
+var VIOLET = ['#2E2461', '#4B36A8', '#7C56E8', '#B49BFF'];
+var GREEN = ['#14432A', '#17683C', '#28A85D', '#68E39A'];
+var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/* deterministic pseudo-random, so the page looks the same on every visit */
+function spread(n) { return ((n * 9301 + 49297) % 233280) / 233280; }
+
+/* ---------- 1. the app link follows the device ---------- */
+var isPhone = window.matchMedia('(max-width: 760px)').matches || /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
+if (isPhone) {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-app]'), function (a) { a.setAttribute('href', 'm.html'); });
+}
+
+/* ---------- 2. "skip this page next time" ---------- */
+var SKIP_KEY = 'secondBrain.skipLanding';
+var target = isPhone ? 'm.html' : 'app.html';
+var stay = /[?&]stay=1/.test(location.search);
+try {
+  if (localStorage.getItem(SKIP_KEY) === '1' && !stay) {
+    location.replace(target + location.hash);       // returning here on purpose? add ?stay=1
+  } else {
+    var wrap = $('#skipWrap');
+    if (wrap) {
+      wrap.hidden = false;
+      $('#skipBtn').addEventListener('click', function () {
+        try { localStorage.setItem(SKIP_KEY, '1'); } catch (e) { /* ignore */ }
+        wrap.innerHTML = 'Saved — this site will open the app directly from now on. ' +
+          'Add <span class="mono">?stay=1</span> to the address to see this page again.';
+      });
+    }
   }
+} catch (e) { /* storage blocked: just show the page */ }
+
+/* ---------- 3. calendar heatmap ---------- */
+function buildHeat(host, opts) {
+  var now = new Date();
+  var ref = new Date(now.getFullYear(), now.getMonth() + (opts.monthOffset || 0), 1);
+  var y = ref.getFullYear(), mo = ref.getMonth();
+  var dim = new Date(y, mo + 1, 0).getDate();
+  var lead = (new Date(y, mo, 1).getDay() + 6) % 7;      // weeks run Monday -> Sunday
+  var todayN = opts.monthOffset ? dim : now.getDate();   // a past month has no future days
+  var head = opts.heads ? '<div class="cal-head">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(function (d) { return '<span>' + d + '</span>'; }).join('') + '</div>' : '';
+  var cells = '';
+  for (var i = 0; i < lead; i++) cells += '<div class="cal-day pad"></div>';
+  for (var d = 1; d <= dim; d++) {
+    var lvl = d <= todayN ? opts.level(d) : 0;
+    var style = lvl ? ' style="background:' + opts.ramp[lvl - 1] + '"' : '';
+    cells += '<div class="cal-day' + (lvl >= 3 ? ' lit' : '') + (!opts.monthOffset && d === todayN ? ' today' : '') + (d > todayN ? ' future' : '') +
+      '" data-day="' + d + '"' + style + ' title="' + MONTHS[mo] + ' ' + d + '">' + (opts.numbers ? d : '') + '</div>';
+  }
+  host.innerHTML = '<div class="cal">' + head + '<div class="cal-grid">' + cells + '</div></div>';
+  return { month: MONTHS[mo] + ' ' + y, days: dim, today: todayN, ramp: opts.ramp };
+}
+
+/* mock: days worked out */
+var mockHeat = $('#mockHeat');
+if (mockHeat) {
+  var m = buildHeat(mockHeat, {
+    heads: false, numbers: false, ramp: GREEN, monthOffset: -1,
+    level: function (d) { var r = spread(d * 17 + 3); return r > 0.62 ? 0 : 1 + Math.floor(r * 6) % 4; }
+  });
+  $('#mockMonth').textContent = m.month.split(' ')[0];
+}
+
+/* mock: today's habit checklist */
+var mockHabits = $('#mockHabits');
+if (mockHabits) {
+  var habits = [
+    ['Morning workout', '#22C55E', 1, [1, 1, 0, 1, 1, 0, 0]],
+    ['Study an hour', '#00A8FF', 1, [1, 1, 1, 0, 1, 1, 0]],
+    ['Read 20 pages', '#8B5CF6', 1, [1, 1, 1, 1, 1, 1, 0]],
+    ['Walk 8k steps', '#F5A524', 0, [0, 1, 1, 0, 1, 0, 0]]
+  ];
+  mockHabits.innerHTML = habits.map(function (h) {
+    return '<div class="mrow" style="--c:' + h[1] + '">' +
+      '<span class="mchk' + (h[2] ? ' on' : '') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19.5 7"/></svg></span>' +
+      '<span class="t">' + h[0] + '</span>' +
+      '<span class="mdots">' + h[3].map(function (on) { return '<i class="' + (on ? 'on' : '') + '"></i>'; }).join('') + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+/* interactive demo: tick any day of the month */
+var demo = $('#demoHeat');
+if (demo) {
+  var info = buildHeat(demo, {
+    heads: true, numbers: true, ramp: VIOLET,
+    level: function (d) { return spread(d * 29 + 11) > 0.42 ? 4 : 0; }
+  });
+  $('#demoMonth').textContent = info.month;
+  var count = function () {
+    var n = demo.querySelectorAll('.cal-day.lit').length;
+    $('#demoCount').textContent = n + ' of ' + info.today + ' days kept this month';
+  };
+  demo.addEventListener('click', function (e) {
+    var cell = e.target.closest('.cal-day');
+    if (!cell || cell.classList.contains('pad') || cell.classList.contains('future')) return;
+    var on = cell.classList.toggle('lit');
+    cell.style.background = on ? VIOLET[3] : '';
+    count();
+  });
+  count();
+}
+
+/* ---------- 4. the section grid ---------- */
+var SECTIONS = [
+  ['grid', '', 'Dashboard', 'Today at a glance: what is due, what you have logged, and where the money went.'],
+  ['folder', '', 'Projects', 'Status, priority, progress and deadlines — as cards or a drag-and-drop board.'],
+  ['tasks', '', 'Tasks', 'Priorities, due dates, project links, and grouping by overdue, today and this week.'],
+  ['repeat', 'violet', 'Habits', 'A daily checklist with streaks, weekly targets and a heatmap you can tick.'],
+  ['bookOpen', '', 'Studying', 'Sessions with subject, minutes and topics, measured against an hours-a-week target.'],
+  ['dumbbell', 'green', 'Exercising', 'Workouts by type and intensity, with volume, rest days and distance.'],
+  ['wallet', '', 'Finances', 'Income, spending, budgets and savings goals, read live from your expense sheets.'],
+  ['card', 'amber', 'Cards', 'What each credit card owes, the line still available, and every charge paid or open.'],
+  ['book', 'violet', 'Journal', 'Dated entries, mood tracking, writing streaks and a sixteen-week mood map.'],
+  ['cap', '', 'Courses', 'Lessons completed, progress, deadlines and the resources that go with them.'],
+  ['note', '', 'Notes', 'Categories, tags, pinning and light markdown — searchable from anywhere in the app.'],
+  ['car', 'amber', 'Car', 'Fuel and service logs from your car spreadsheet, with cost per kilometre worked out.']
+];
+var PATHS = {
+  grid: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.2h7.5A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/>',
+  tasks: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12.2 2.8 2.8L16.5 9"/>',
+  repeat: '<path d="M4 10.5A4.5 4.5 0 0 1 8.5 6H20m0 0-3.5-3.5M20 6l-3.5 3.5"/><path d="M20 13.5A4.5 4.5 0 0 1 15.5 18H4m0 0 3.5 3.5M4 18l3.5-3.5"/>',
+  bookOpen: '<path d="M12 7.6C10.4 6.1 8.2 5.4 4 5.4V18c4.2 0 6.4.7 8 2.2 1.6-1.5 3.8-2.2 8-2.2V5.4c-4.2 0-6.4.7-8 2.2z"/><path d="M12 7.6v12.6"/>',
+  dumbbell: '<path d="M6.5 5.5v13M3.5 8.5v7M17.5 5.5v13M20.5 8.5v7M6.5 12h11"/>',
+  wallet: '<path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2.5"/><path d="M3 6.5A2.5 2.5 0 0 0 5.5 9H19a2 2 0 0 1 2 2v1.5"/><path d="M21 12.5h-4a2 2 0 0 0 0 4h4z"/>',
+  card: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6 15h3"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  cap: '<path d="M22 9.5 12 4.5 2 9.5l10 5z"/><path d="M6 11.5v5c3.5 2.7 8.5 2.7 12 0v-5"/><path d="M22 9.5v5"/>',
+  note: '<path d="M14.5 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.5z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+  car: '<path d="M5 17h14M4.5 17v2.5h3V17M16.5 17v2.5h3V17"/><path d="M3.5 17v-4l2-5.2A2 2 0 0 1 7.4 6.5h9.2a2 2 0 0 1 1.9 1.3l2 5.2v4z"/><path d="M4 13h16M7.5 15h1.5M15 15h1.5"/>'
+};
+var grid = $('#sectionGrid');
+if (grid) {
+  grid.innerHTML = SECTIONS.map(function (s, i) {
+    return '<article class="card rise' + (i % 4 ? ' d' + (i % 4) : '') + '">' +
+      '<div class="ico ' + s[1] + '"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + PATHS[s[0]] + '</svg></div>' +
+      '<h3>' + s[2] + '</h3><p>' + s[3] + '</p></article>';
+  }).join('');
+}
+
+/* ---------- 5. reveal on scroll + sticky header ---------- */
+/* The animation is opt-in: nothing is hidden until the script arms it, so a blocked
+   or broken script leaves a perfectly readable page behind. */
+var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+var io = !reduced && 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
+  entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+}, { rootMargin: '0px 0px -40px 0px', threshold: 0 }) : null;
+if (io) {
+  Array.prototype.forEach.call(document.querySelectorAll('.rise'), function (el) {
+    el.classList.add('armed');
+    io.observe(el);
+  });
+}
+/* Safety net: anything the observer missed — a jumped scroll, a restored position,
+   a throttled tab — is shown rather than left invisible. */
+function catchUp() {
+  if (!io) return;
+  Array.prototype.forEach.call(document.querySelectorAll('.rise.armed:not(.in)'), function (el) {
+    if (el.getBoundingClientRect().top < innerHeight) { el.classList.add('in'); io.unobserve(el); }
+  });
+}
+var queued = false;
+function scheduleCatchUp() {
+  if (queued) return;
+  queued = true;
+  requestAnimationFrame(function () { queued = false; catchUp(); });
+}
+addEventListener('load', catchUp);
+addEventListener('pageshow', catchUp);
+addEventListener('resize', scheduleCatchUp, { passive: true });
+addEventListener('scroll', scheduleCatchUp, { passive: true });
+var header = $('header');
+var onScroll = function () { header.classList.toggle('stuck', window.scrollY > 12); };
+addEventListener('scroll', onScroll, { passive: true });
+onScroll();
 </script>
 </body>
 </html>
