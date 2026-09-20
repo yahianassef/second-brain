@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Code.gs — income from the Starting block</title>
+<body style="font:13px/1.6 monospace;background:#0B0F16;color:#E6EAF2;padding:16px">
+<pre id="out">running…</pre>
+<script>
+function mkRange(sh, r, c, nr, nc) {
+  return {
+    getValues() { const o = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const rr = sh._g[r - 1 + i] || []; row.push(rr[c - 1 + j] ?? ''); } o.push(row); } return o; },
+    getDisplayValues() { return this.getValues().map(row => row.map(v => typeof v === 'number' ? 'AED' + v.toFixed(2) : String(v ?? ''))); },
+    setValue() { return this; }, setValues() { return this; }, clearContent() { return this; }
+  };
+}
+function mkSheet(name, g) {
+  const sh = { _name: name, _g: g, getName: () => name, setName: () => sh,
+    getDataRange: () => mkRange(sh, 1, 1, Math.max(g.length, 1), Math.max(1, ...g.map(r => r.length))),
+    getRange: (r, c, nr = 1, nc = 1) => mkRange(sh, r, c, nr, nc),
+    getLastRow: () => g.length, getLastColumn: () => Math.max(1, ...g.map(r => r.length)),
+    hideSheet: () => sh, copyTo: () => sh };
+  return sh;
+}
+const D = (y, m, d) => new Date(y, m - 1, d);
+const pad = (row, upto) => { const r = row.slice(); while (r.length < upto) r.push(''); return r; };
+
+/** A month tab shaped like the real ones: expenses on the left, blocks in G/H/I. */
+function monthTab(name, expenses, blocks) {
+  const g = [];
+  const put = (ri, ci, v) => { while (g.length <= ri) g.push([]); const row = g[g.length - 1] === undefined ? [] : g[ri]; while (row.length <= ci) row.push(''); row[ci] = v; };
+  // header + expense rows in A–E
+  g.push(pad(['Expense Name', '', 'Category', 'Payment Method', ''], 9));
+  expenses.forEach(e => g.push(pad(e, 9)));
+  while (g.length < 30) g.push(pad([], 9));
+  blocks.forEach(([rowIdx, label, amount, note]) => {
+    while (g.length <= rowIdx) g.push(pad([], 9));
+    g[rowIdx][6] = label; g[rowIdx][7] = amount; g[rowIdx][8] = note;
+  });
+  return mkSheet(name, g);
+}
+
+// September 2026 — exactly the real shape: cell holds the salary, note names two more inflows
+const sep = monthTab('UAE Finances - September 2026',
+  [['Rent', 3800, 'MBZ Home', 'ADCB', D(2026, 9, 1)]],
+  [[0, 'Paid In Cash', 0, ''], [2, 'Paid with ADCB', 11389.5, ''], [7, 'Sum', 11389.5, ''],
+   [10, 'Current Cash', 0, ''], [12, 'Current ADCB', 697, '720 From Egypt ( Hadidy Gift )+850 From Company'], [14, 'Sum', 2277, ''],
+   [16, 'Starting 1/9/2026', '', 'Notes'],
+   [17, 'Cash', 0, ''],
+   [18, 'Arab Bank', 10500, 'Salary + 720 From Egypt+850 Company ( Parking + Fuel )'],
+   [19, 'ADCB Savings Account', 0, 'Last Month Saving'],
+   [20, 'E& Money', 0, ''],
+   [21, 'Total', 10500, '']]);
+
+// October 2026 — carried-over savings that are NOT zero, plus a credit-limit block after it
+const oct = monthTab('UAE Finances - October 2026',
+  [['Rent', 3900, 'MBZ Home', 'ADCB', D(2026, 10, 1)]],
+  [[16, 'Starting 1/10/2026', '', 'Notes'],
+   [17, 'Cash', 100, ''],
+   [18, 'Arab Bank', 9000, 'Salary'],
+   [19, 'ADCB Savings Account', 2500, 'Last Month Saving'],
+   [20, 'Total', 11600, ''],
+   [22, 'Starting 1/10/2026', '', 'Notes'],
+   [23, 'DIB Credit Available Limit', 5000, ''],
+   [24, 'Tabby Card Available Limit', 5000, '']]);
+
+// November 2026 — a note that BREAKS DOWN its own cell must add nothing
+const nov = monthTab('UAE Finances - November 2026',
+  [['Rent', 3900, 'MBZ Home', 'ADCB', D(2026, 11, 1)]],
+  [[16, 'Starting 1/11/2026', '', 'Notes'],
+   [17, 'ADCB Savings Account', 25245, 'Starting Balance 13920 , Added 1325 , Transfer From EGP Hazem , 9000 Credit Card +1000 Nadeem'],
+   [18, 'Total', 25245, '']]);
+
+// July 2026 — before the cutoff, must be ignored entirely
+const jul = monthTab('UAE Finances -July 2026',
+  [['Rent', 3700, 'MBZ Home', 'ADCB', D(2026, 7, 1)]],
+  [[16, 'Starting 1/7/2026', '', 'Notes'],
+   [17, 'Arab Bank', 7000, 'Salary'],
+   [18, 'ADCB Savings Account', 8450, 'Last Month Saving'],
+   [19, 'Total', 15450, '']]);
+
+// A month whose only right-hand block is credit limits — no income to report
+const dec = monthTab('UAE Finances - December 2026',
+  [['Rent', 3900, 'MBZ Home', 'ADCB', D(2026, 12, 1)]],
+  [[16, 'Starting 1/12/2026', '', 'Notes'],
+   [17, 'DIB Credit Available Limit', 5000, ''],
+   [18, 'Tabby Card Available Limit', 5000, ''],
+   [19, 'ADCB 365 Islamic Card Available Limit', 8250, '']]);
+
+const sheets = [jul, sep, oct, nov, dec];
+const ss = { getName: () => 'Expenses Sheet Starting November 2025', getSheets: () => sheets,
+  getSheetByName: n => sheets.find(s => s.getName() === n) || null, insertSheet: n => mkSheet(n, [[]]),
+  setActiveSheet: s => s, moveActiveSheet: () => {}, getNumSheets: () => sheets.length };
+const SpreadsheetApp = { openById: () => ss };
+const Session = { getScriptTimeZone: () => 'Asia/Dubai' };
+const Utilities = { formatDate: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` };
+const DriveApp = { getFileById: () => ({ getLastUpdated: () => new Date() }) };
+const ContentService = { MimeType: { JSON: 'json' }, createTextOutput: () => ({ setMimeType() { return this; } }) };
+
+const R = [];
+const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> ' + x : ''));
+
+(async () => {
+  const src = await (await fetch('Code.gs?t=' + Date.now(), { cache: 'no-store' })).text();
+  const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService',
+    src + '\n; return { CONFIG, readIncome, extrasFromNote, invalidateTabs };')(SpreadsheetApp, Session, Utilities, DriveApp, ContentService);
+  api.CONFIG.SECRET = ''; api.CONFIG.EXPENSES_SHEET_ID = 'x'; api.CONFIG.CAR_SHEET_ID = 'x';
+  api.CONFIG.CARD_TABS = 'none'; api.CONFIG.IGNORE_TABS = ''; api.CONFIG.INCOME_FROM = '2026-09';
+
+  const income = api.readIncome();
+  const byMonth = m => income.find(i => i.month === m);
+
+  ok('income read for September onwards only',
+     income.map(i => i.month).sort().join(',') === '2026-09,2026-10,2026-11',
+     income.map(i => i.month).sort().join(',') || '(none)');
+  ok('July (before the cutoff) is ignored', !byMonth('2026-07'));
+  ok('a credit-limit-only month reports no income', !byMonth('2026-12'));
+
+  const s = byMonth('2026-09');
+  ok('September income is 12,070', s && s.total === 12070, s ? String(s.total) : 'missing');
+  ok('  …made of 10,500 in the accounts', s && s.accounts === 10500, s ? String(s.accounts) : '');
+  ok('  …plus 1,570 named only in the note', s && s.extraTotal === 1570, s ? String(s.extraTotal) : '');
+  ok('  …itemised as 720 and 850', s && s.extras.map(e => e.amount).join('+') === '720+850',
+     s ? s.extras.map(e => e.amount + ' (' + e.from + ')').join(', ') : '');
+  ok('September carries nothing over', s && s.carried === 0, s ? String(s.carried) : '');
+  ok('the salary line keeps its note', s && /Salary/.test(s.lines.find(l => l.label === 'Arab Bank').note));
+  ok('heading kept for display', s && s.heading === 'Starting 1/9/2026', s ? s.heading : '');
+
+  const o = byMonth('2026-10');
+  ok('October totals the accounts', o && o.total === 11600, o ? String(o.total) : '');
+  ok('October flags 2,500 as carried over', o && o.carried === 2500, o ? String(o.carried) : '');
+  ok('the credit-limit block after it is skipped', o && !o.lines.some(l => /limit/i.test(l.label)),
+     o ? o.lines.map(l => l.label).join(', ') : '');
+
+  const n = byMonth('2026-11');
+  ok('a note that breaks down its own cell adds nothing', n && n.total === 25245 && n.extraTotal === 0,
+     n ? n.total + ' / extras ' + n.extraTotal : '');
+
+  ok('note parsing: extras beyond the cell', JSON.stringify(api.extrasFromNote('Salary + 720 From Egypt+850 Company', 10500)) === '[720,850]');
+  ok('note parsing: a breakdown of the cell', JSON.stringify(api.extrasFromNote('13920 + 1325 + 9000 + 1000', 25245)) === '[]');
+  ok('note parsing: the cell named in its own note', JSON.stringify(api.extrasFromNote('Salary 10500 + 720 Egypt', 10500)) === '[720]');
+  ok('note parsing: words only', JSON.stringify(api.extrasFromNote('Last Month Saving', 0)) === '[]');
+
+  const failed = R.filter(r => r.startsWith('FAIL')).length;
+  document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;
+})().catch(e => { document.getElementById('out').textContent = 'ERROR: ' + (e && e.stack || e); });
+</script>

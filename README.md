@@ -49,6 +49,9 @@ add on one device shows up on the others.
 - **Exercising** — the same shape for workouts (type, focus, minutes, intensity, optional distance), with
   workouts-per-week against target, streaks and rest days, the month's split by workout type and its own
   **heatmap**
+- **Income** — each month tab keeps a `Starting <date>` block listing what was in every account,
+  with a Notes column explaining where it came from. That block is the month's income: the app shows
+  the total, the net against spending, and a card breaking it down line by line with your notes
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
 - **Courses** — lessons completed, progress, deadlines, resources
 - **Notes** — categories, tags, pinning, markdown-ish formatting
@@ -101,6 +104,17 @@ then paste that code — no retyping.
 | Edit in Google Sheets | every device | ≤ 15s while the app is open |
 | Add/edit/delete in the app | Google Sheets | immediately |
 | Any app data (tasks, notes…) | other devices | ≤ 15s |
+
+**How income is read**
+
+The `Starting <date>` block beside each month's table is that month's income. The account cells are
+added up, and the **Notes** column beside them is read too: a note naming money that landed somewhere
+else counts on top. September's `Arab Bank 10,500` with the note *"Salary + 720 From Egypt + 850
+Company"* therefore reads as **12,070**, not 10,500 — the cell is the salary, the note names two more
+inflows. A note that merely breaks the cell down (`13920 + 1325 + 9000 + 1000` against a 25,245 cell)
+adds nothing, and a row noted as last month's saving is flagged as carried over rather than dropped.
+Blocks listing credit limits are ignored. `CONFIG.INCOME_FROM` (default `2026-09`) sets the first
+month read; earlier months keep using income entered in the app.
 
 **How expenses map to tabs**
 

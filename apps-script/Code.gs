@@ -1,6 +1,10 @@
 /**
  * Second Brain — Google Sheets sync API
  * =====================================
+ * v9 — reads the month's income from the "Starting …" block, including amounts
+ *      that only the Notes column names ("Salary + 720 From Egypt + 850
+ *      Company" against a 10,500 cell means 12,070 came in). CONFIG.INCOME_FROM
+ *      decides which months are read.
  * v6 — columns are found by what they contain, not only by their header:
  *      these sheets leave the amount and date headers blank. Card tabs use
  *      "Payments" as their name column. CARD_TABS / IGNORE_TABS accept globs
@@ -56,6 +60,9 @@ var CONFIG = {
   CARD_TABS: '',
   // Tabs to skip entirely, comma separated (a Summary tab, say).
   IGNORE_TABS: '',
+  // Month from which the "Starting …" block counts as that month's income
+  // (YYYY-MM). Earlier months are left alone. '' = every month.
+  INCOME_FROM: '2026-09',
 
   // Where the Second Brain's own data (tasks, notes, projects…) is stored.
   // A tab is created automatically in the Expenses spreadsheet.
@@ -103,7 +110,7 @@ function handle(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 8 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 9 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -139,6 +146,7 @@ function pullAll() {
     service: readService(),
     expenses: readExpenses(),
     cards: readCards(),
+    income: readIncome(),
     brain: readBrain(),
     meta: {
       carSheet: openCar().getName(),
@@ -657,6 +665,137 @@ function readCards() {
       rows: rows
     };
   });
+}
+
+/* ============================================================
+   INCOME — the "Starting <date>" block each month tab keeps beside its table.
+   The cells hold what landed in each account; the Notes column beside them
+   spells out where it came from, and sometimes names money that arrived in a
+   DIFFERENT account ("Salary + 720 From Egypt + 850 Company"). Those amounts
+   are part of the month's income too, so the notes are read, not just summed.
+   ============================================================ */
+
+var STARTING_LABEL = /^\s*starting\b/i;
+var CARRIED_NOTE = /last month|previous month|carried|carry[- ]?over|saving from/i;
+var TOTAL_LABEL = /^(total|sum)$/i;
+
+/** Every number in a note: "720 From Egypt+850 Company" -> [720, 850]. */
+function numbersIn(text) {
+  var out = [];
+  var hits = String(text || '').match(/\d[\d,]*(?:\.\d+)?/g) || [];
+  hits.forEach(function (h) {
+    var n = asNumber(h);
+    if (n > 0) out.push(n);
+  });
+  return out;
+}
+
+/**
+ * What a note adds on top of the cell beside it.
+ *  - "Starting Balance 13920 , Added 1325 , 9000 Credit Card" against a cell of
+ *    25,245 is a BREAKDOWN of that cell — it adds nothing.
+ *  - "Salary + 720 From Egypt + 850 Company" against a cell of 10,500 names two
+ *    amounts that are not in the cell — they add 1,570.
+ * Any number equal to the cell itself is the cell, never an extra.
+ */
+function extrasFromNote(note, cellAmount) {
+  var nums = numbersIn(note);
+  if (!nums.length) return [];
+  var sum = 0;
+  nums.forEach(function (n) { sum += n; });
+  if (cellAmount > 0 && Math.abs(sum - cellAmount) < 1) return [];      // the note breaks down the cell
+  return nums.filter(function (n) { return Math.abs(n - cellAmount) >= 1; });
+}
+
+/** Months at or after CONFIG.INCOME_FROM ('' = every month). */
+function incomeMonthAllowed(month) {
+  var from = String(CONFIG.INCOME_FROM || '').trim();
+  if (!from) return true;
+  return !!month && month >= from;
+}
+
+/**
+ * The income block on one tab: the rows under "Starting …" down to its Total.
+ * Blocks listing credit limits are not money coming in, so they are skipped.
+ */
+function readIncomeBlock(t) {
+  var grid = t.grid;
+  for (var r = 0; r < grid.length; r++) {
+    var row = grid[r] || [];
+    for (var c = 0; c < row.length; c++) {
+      if (!STARTING_LABEL.test(String(row[c] === undefined ? '' : row[c]))) continue;
+      var heading = String(row[c]).trim();
+      var lines = [], total = null, blanks = 0;
+      for (var i = r + 1; i < grid.length; i++) {
+        var label = cellText(grid, i, c);
+        if (!label) { if (++blanks > 1) break; continue; }
+        blanks = 0;
+        if (STARTING_LABEL.test(label)) break;                 // the next block
+        var amount = asNumber((grid[i] || [])[c + 1]);
+        if (TOTAL_LABEL.test(label)) { total = amount; break; }
+        lines.push({ label: label, amount: amount, note: cellText(grid, i, c + 2) });
+      }
+      var limitish = lines.filter(function (l) { return /limit/i.test(l.label); }).length;
+      if (lines.length && limitish > lines.length / 2) continue;   // a credit-limit block
+      if (!lines.length) continue;
+
+      var base = 0, extras = [], carried = 0;
+      lines.forEach(function (l) {
+        base += l.amount;
+        l.extras = extrasFromNote(l.note, l.amount);
+        l.extraTotal = 0;
+        l.extras.forEach(function (n) { l.extraTotal += n; });
+        if (CARRIED_NOTE.test(l.note)) carried += l.amount;
+      });
+      if (total === null) total = base;
+      lines.forEach(function (l) { l.extras.forEach(function (n) { extras.push({ amount: n, from: l.label, note: l.note }); }); });
+      var extraTotal = 0;
+      extras.forEach(function (e) { extraTotal += e.amount; });
+
+      return {
+        heading: heading,
+        accounts: total,            // what the account cells add up to
+        extras: extras,             // amounts named only in the notes
+        extraTotal: Math.round(extraTotal * 100) / 100,
+        carried: Math.round(carried * 100) / 100,   // rows noted as last month's money
+        total: Math.round((total + extraTotal) * 100) / 100,
+        lines: lines
+      };
+    }
+  }
+  return null;
+}
+
+/** Income per month, for the months CONFIG.INCOME_FROM allows. */
+function readIncome() {
+  var out = [];
+  expenseTabs().forEach(function (t) {
+    if (!incomeMonthAllowed(t.month)) return;
+    var block = readIncomeBlock(t);
+    if (!block) return;
+    out.push({
+      month: t.month,
+      tab: t.name,
+      currency: t.currency,
+      heading: block.heading,
+      total: block.total,
+      accounts: block.accounts,
+      extraTotal: block.extraTotal,
+      carried: block.carried,
+      lines: block.lines.map(function (l) {
+        return {
+          label: l.label,
+          amount: l.amount,
+          note: l.note,
+          extras: l.extras,
+          extraTotal: Math.round(l.extraTotal * 100) / 100,
+          carried: CARRIED_NOTE.test(l.note)
+        };
+      }),
+      extras: block.extras
+    });
+  });
+  return out;
 }
 
 /* ============================================================

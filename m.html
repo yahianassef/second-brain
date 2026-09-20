@@ -1044,6 +1044,9 @@ function monthTotals(m) {
     if (sheets && x.currency !== cur) return;
     x.type === 'Income' ? income += num(x.amount) : expense += num(x.amount);
   });
+  // where the sheet records the month's income, it wins over anything app-side
+  const fromSheet = sheets && typeof incomeFor === 'function' ? incomeFor(m) : null;
+  if (fromSheet) income = num(fromSheet.total);
   return { income, expense, net: income - expense, rate: income ? (income - expense) / income : 0 };
 }
 function spentFor(cat, m) {
@@ -1515,7 +1518,7 @@ const POLL_MS = 15000;      // change-probe interval while the tab is visible
 
 const Sheets = {
   cfg: { url: '', secret: '', auto: true, lastSync: 0 },
-  data: { fuel: [], service: [], expenses: [], cards: [], meta: null },
+  data: { fuel: [], service: [], expenses: [], cards: [], income: [], meta: null },
   out: { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [], cardStatus: [] },
   stamp: { car: 0, expenses: 0 },
   status: 'off', message: 'Not connected', busy: false, applying: false, timer: null, poll: null,
@@ -1644,10 +1647,10 @@ const Sheets = {
 
       if (out.stamp) this.stamp = out.stamp;
       const d = out.data || {};
-      const before = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards]);
-      this.data = { fuel: d.fuel || [], service: d.service || [], expenses: d.expenses || [], cards: d.cards || [], meta: d.meta || null };
+      const before = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards, this.data.income]);
+      this.data = { fuel: d.fuel || [], service: d.service || [], expenses: d.expenses || [], cards: d.cards || [], income: d.income || [], meta: d.meta || null };
       reapplyCardStatus();
-      const sheetChanged = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards]) !== before;
+      const sheetChanged = JSON.stringify([this.data.fuel, this.data.service, this.data.expenses, this.data.cards, this.data.income]) !== before;
 
       // merge the Second Brain database using the same engine the gist sync uses
       let brainChanged = false;
@@ -1852,7 +1855,9 @@ function expenseUniverse() {
       currency: r.currency || 'AED', type: 'Expense', source: 'sheet'
     }));
     // Your sheets hold expenses only, so income stays app-side and joins the same view.
-    const income = (DB.transactions || []).filter(x => x.type === 'Income').map(x => ({
+    const income = (DB.transactions || [])
+      .filter(x => x.type === 'Income' && !incomeCoversMonth(String(x.date || '').slice(0, 7)))
+      .map(x => ({
       id: x.id, date: x.date, month: String(x.date || '').slice(0, 7),
       description: x.description, amount: num(x.amount),
       category: x.category, account: x.account,
@@ -1951,6 +1956,45 @@ function sheetFormHint(kind, item, vals) {
    copied into a month tab, so counting both would double up.
    ========================================================= */
 const cardList = () => (Sheets.data.cards || []).filter(c => c && c.name);
+
+/* =========================================================
+   INCOME FROM THE SHEET — the "Starting …" block on a month tab.
+   Its cells hold what landed in each account; the Notes column beside them can
+   name money that arrived elsewhere ("Salary + 720 From Egypt + 850 Company"),
+   and that counts too. Months the sheet does not cover keep using app income.
+   ========================================================= */
+const incomeList = () => (Sheets.data.income || []).filter(i => i && i.month);
+const incomeCoversMonth = m => incomeList().some(i => i.month === m);
+function incomeFor(m) {
+  const rows = incomeList().filter(i => i.month === m);
+  if (!rows.length) return null;
+  const cur = typeof baseCur === 'function' ? baseCur() : 'AED';
+  return rows.find(i => (i.currency || 'AED') === cur) || rows[0];
+}
+
+/** Income, account by account, with the notes that explain it. */
+function incomeCard(m, span = 'span-6') {
+  const inc = incomeFor(m);
+  if (!inc) return '';
+  const cur = inc.currency || 'AED';
+  const lines = (inc.lines || []).filter(l => num(l.amount) || num(l.extraTotal));
+  return `<div class="card ${span}">
+    ${cardHead('arrowDown', `Income · ${monthLabel(m, true)}`, `<span class="hint">${esc(inc.heading || '')}</span>`)}
+    <div style="font-size:26px;font-weight:700;letter-spacing:-.03em;margin:-6px 0 12px">${esc(curMoney(inc.total, cur))}</div>
+    <div class="mini-list">
+      ${lines.map(l => `<div class="prog-row" style="padding:9px 2px">
+        <div class="top"><span>${esc(l.label)}${l.carried ? ' <span class="chip slate">carried over</span>' : ''}</span><b>${esc(curMoney(l.amount, cur))}</b></div>
+        ${l.note ? `<div class="row-sub" style="white-space:normal">${esc(l.note)}</div>` : ''}
+        ${(l.extras || []).length ? `<div class="row-sub txt-blue" style="white-space:normal">+ ${l.extras.map(n => esc(curMoney(n, cur))).join(' + ')} named in the note, counted on top</div>` : ''}
+      </div>`).join('')}
+    </div>
+    <div class="p-foot">
+      <span>${esc(curMoney(inc.accounts, cur))} in the accounts</span>
+      ${num(inc.extraTotal) ? `<span class="txt-blue">+ ${esc(curMoney(inc.extraTotal, cur))} from the notes</span>` : ''}
+      ${num(inc.carried) ? `<span class="muted">incl. ${esc(curMoney(inc.carried, cur))} carried over</span>` : ''}
+    </div>
+  </div>`;
+}
 const cardDebtTotal = cur => sum(cardList().filter(c => (c.currency || 'AED') === (cur || 'AED')), c => c.debt);
 const cardCurrencies = () => [...new Set(cardList().map(c => c.currency || 'AED'))];
 const curMoney = (v, cur) => (cur || 'AED') + ' ' + num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2486,6 +2530,8 @@ SCREENS.money = () => {
   </div></div>
   <div class="stat-grid">
     ${usingSheets() ? `
+    ${incomeFor(m) ? statTile('arrowDown', 'Income', money(fin.income), monthLabel(m, true)) : ''}
+    ${incomeFor(m) ? statTile('wallet', 'Net', money(fin.net, 0, true), fin.net < 0 ? 'spent over income' : 'kept this month', fin.net < 0 ? 'txt-red' : '') : ''}
     ${statTile('arrowUp', 'Spent', money(fin.expense), monthLabel(m, true))}
     ${statTile('layers', 'Entries', expenseUniverse().filter(x => String(x.date || '').slice(0, 7) === m && x.currency === baseCur()).length, 'from your sheet')}
     ` : `
@@ -2615,6 +2661,7 @@ SCREENS.money = () => {
     <p class="hint" style="margin-top:8px">${esc(rangeLabel())} · ${plural(list.length, 'row')}${sheets ? ' · live from your sheet' : ''}</p>
   </div>
   <div class="card">${cardHead('trend', 'Last 6 months', chartLegend())}${miniChart(m)}</div>
+  ${incomeCard(m, '')}
   ${categoryChart(list)}
   <div class="card">${cardHead('layers', esc(rangeLabel()), `<span class="hint">${entryCount(list.length)}</span>`)}
     <div class="list">${list.length ? mTxRows(list)
