@@ -667,6 +667,18 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .routine-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}
 .routine-cols > div{min-width:0}
 .routine-cols .rc-head{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-3);font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+
+/* Notifications panel */
+.notify-list{display:flex;flex-direction:column;gap:2px}
+.notify-row{display:flex;align-items:center;gap:12px;padding:10px 10px;border-radius:12px;border:1px solid transparent;flex-wrap:wrap}
+.notify-row:hover{background:var(--surface-2)}
+.notify-row.on{border-color:rgba(0,168,255,.25);background:rgba(0,102,255,.06)}
+.notify-row .grow{flex:1;min-width:160px}
+.notify-row .grow b{font-size:14px;font-weight:600}
+.notify-row .hint{font-size:12px}
+.notify-row .toggle{height:auto;min-height:0}
+.input.sm,.select.sm{padding:6px 10px;font-size:13px;min-height:36px;width:auto;min-width:96px}
+.nf-daily{width:96px;text-align:center}
 </style>
 </head>
 <body>
@@ -3285,6 +3297,190 @@ function openSheetForm(kind, item = null) {
    added in the app and a row typed into the sheet are the same thing.
    Falls back to the app's own transactions when Sheets is not connected.
    ========================================================= */
+
+/* =========================================================
+   NOTIFICATIONS
+   The reminders themselves are sent by the Apps Script on a schedule, because
+   a page that is closed cannot wake itself up. This panel only decides what to
+   send and when; the settings travel in the synced brain.
+   ========================================================= */
+const NOTIFY_CATS = [
+  { k: 'digest',   l: 'Daily digest',    d: 'Tasks due, spending so far, whether you journalled', when: 'daily',  def: '07:30' },
+  { k: 'tasks',    l: 'Tasks due',       d: 'Overdue and due today, named', when: 'daily',  def: '08:00' },
+  { k: 'expenses', l: 'Expense logging', d: 'Only when nothing reached your sheet that day', when: 'daily',  def: '21:00' },
+  { k: 'journal',  l: 'Journalling',     d: 'Only when the day has no entry; mentions your streak', when: 'daily',  def: '21:30' },
+  { k: 'habits',   l: 'Habits',          d: 'Which habits are still open today', when: 'daily',  def: '20:00' },
+  { k: 'budgets',  l: 'Budget warnings', d: 'When a category passes 90% of its monthly limit', when: 'daily',  def: '10:00' },
+  { k: 'projects', l: 'Project status',  d: 'Deadlines within a week, and active projects untouched for 7 days', when: 'weekly', def: '09:00', day: 'Sun' },
+  { k: 'courses',  l: 'Course progress', d: 'Courses in progress with no lesson logged in a week', when: 'weekly', def: '18:00', day: 'Wed' },
+  { k: 'study',    l: 'Study hours',     d: 'Against your weekly study target', when: 'weekly', def: '19:00', day: 'Fri' },
+  { k: 'exercise', l: 'Exercise',        d: 'Workouts against your weekly target', when: 'weekly', def: '19:30', day: 'Fri' },
+  { k: 'cards',    l: 'Credit cards',    d: 'What is still owed across your cards', when: 'weekly', def: '10:30', day: 'Mon' },
+  { k: 'car',      l: 'Car service',     d: 'When 5,000 km or 6 months have passed since the last service', when: 'weekly', def: '09:30', day: 'Sat' }
+];
+const NOTIFY_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const CHANNEL_HELP = {
+  email: { label: 'Email', ph: 'you@gmail.com', help: 'Leave empty to use the Google account the script runs as. Arrives as an email, so your phone shows it like any other mail.' },
+  ntfy: { label: 'ntfy (instant push)', ph: 'a-topic-only-you-know', help: 'Install the free <b>ntfy</b> app, subscribe to a topic no one else would guess, and put the same topic here. True push, no account.' },
+  telegram: { label: 'Telegram', ph: 'botToken|chatId', help: 'Create a bot with <b>@BotFather</b>, message it once, then paste <code>botToken|chatId</code>. Your chat id comes from <b>@userinfobot</b>.' }
+};
+const notifyCfg = () => {
+  const n = (DB.settings && DB.settings.notify) || {};
+  return { on: n.on !== false, channel: n.channel || 'email', to: n.to || '', cats: n.cats || {} };
+};
+const notifyCatCfg = c => {
+  const saved = (notifyCfg().cats || {})[c.k] || {};
+  return { on: saved.on === true, time: saved.time || c.def, day: saved.day || c.day || '' };
+};
+function notifySave(cfg) {
+  DB.settings.notify = cfg;
+  DB.settings.ts = Date.now();
+  saveDB();
+  if (Sheets.connected()) Sheets.queue(true);      // the script reads this from the brain
+}
+
+const Notify = {
+  async openPanel() {
+    const cfg = notifyCfg();
+    const connected = Sheets.connected();
+    const rows = NOTIFY_CATS.map(c => {
+      const s = notifyCatCfg(c);
+      return `<div class="notify-row${s.on ? ' on' : ''}" data-cat="${c.k}">
+        <label class="toggle"><input type="checkbox" data-nfield="on" data-cat="${c.k}"${s.on ? ' checked' : ''}><span></span></label>
+        <div class="grow"><b>${c.l}</b><div class="hint">${c.d}</div></div>
+        ${c.when === 'weekly' ? `<select class="select sm" data-nfield="day" data-cat="${c.k}" aria-label="${c.l} day">${NOTIFY_DAYS.map(d => `<option${s.day === d ? ' selected' : ''}>${d}</option>`).join('')}</select>` : '<span class="hint nf-daily">daily</span>'}
+        <input class="input sm" type="time" data-nfield="time" data-cat="${c.k}" value="${esc(s.time)}" aria-label="${c.l} time">
+      </div>`;
+    }).join('');
+
+    const m = openModal(`
+      <div class="modal-head">
+        <div><div class="eyebrow">Reminders</div><h3>Notifications</h3></div>
+        <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button>
+      </div>
+      <div class="modal-body">
+        <div class="sync-state" data-state="${connected ? 'idle' : 'off'}"><span class="sync-dot"></span><b id="nfStatus">${connected ? 'Checking the schedule…' : 'Google Sheets sync is not connected'}</b></div>
+        <p class="hint" style="margin-top:8px">${connected
+          ? 'Reminders are sent by your Apps Script, so they arrive whether or not the app is open.'
+          : 'Notifications run through the same Apps Script as your sheets. Connect that first, then come back.'}</p>
+
+        <div class="set-section"><h4>Where to send them</h4>
+          <div class="form-grid">
+            <div class="field"><label for="nfChannel">Channel</label>
+              <select class="select" id="nfChannel">${Object.keys(CHANNEL_HELP).map(k => `<option value="${k}"${cfg.channel === k ? ' selected' : ''}>${CHANNEL_HELP[k].label}</option>`).join('')}</select></div>
+            <div class="field"><label for="nfTo">Destination</label><input class="input" id="nfTo" value="${esc(cfg.to)}" placeholder="${esc(CHANNEL_HELP[cfg.channel].ph)}" autocomplete="off" spellcheck="false"></div>
+          </div>
+          <p class="hint" id="nfHelp" style="margin-top:8px">${CHANNEL_HELP[cfg.channel].help}</p>
+          <div class="btn-row" style="margin-top:12px">
+            <label class="toggle"><input type="checkbox" id="nfOn"${cfg.on ? ' checked' : ''}><span></span>Send reminders</label>
+            <button class="btn btn-ghost" id="nfTest">${icon('sparkle', 15)} Send a test</button>
+          </div>
+        </div>
+
+        <div class="set-section"><h4>What to send</h4>
+          <p>Each one only arrives when it is actually true — no reminder to log expenses on a day you already logged some.</p>
+          <div class="notify-list">${rows}</div>
+        </div>
+
+        <div class="set-section"><h4>Check and switch on</h4>
+          <p>Preview asks the script what it would send right now, without sending anything.</p>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="nfPreview">${icon('search', 15)} Preview</button>
+            <button class="btn btn-ghost" id="nfInstall">${icon('clock', 15)} Turn the schedule on</button>
+            <button class="btn btn-ghost" id="nfRemove">${icon('x', 15)} Turn it off</button>
+          </div>
+          <div id="nfOut" class="hint" style="margin-top:12px"></div>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Close</button><button class="btn btn-primary" id="nfSave">${icon('check', 15)} Save</button></div>`, true);
+
+    const out = msg => { const el = $('#nfOut', m); if (el) el.innerHTML = msg; };
+    const read = () => {
+      const cats = {};
+      NOTIFY_CATS.forEach(c => {
+        const row = $(`.notify-row[data-cat="${c.k}"]`, m);
+        const day = $('[data-nfield="day"]', row);
+        cats[c.k] = {
+          on: $('[data-nfield="on"]', row).checked,
+          time: $('[data-nfield="time"]', row).value || c.def,
+          day: day ? day.value : ''
+        };
+      });
+      return { on: $('#nfOn', m).checked, channel: $('#nfChannel', m).value, to: $('#nfTo', m).value.trim(), cats };
+    };
+
+    m.addEventListener('change', e => {
+      if (e.target.id === 'nfChannel') {
+        const h = CHANNEL_HELP[e.target.value];
+        $('#nfHelp', m).innerHTML = h.help;
+        $('#nfTo', m).placeholder = h.ph;
+      }
+      const row = e.target.closest && e.target.closest('.notify-row');
+      if (row && e.target.dataset.nfield === 'on') row.classList.toggle('on', e.target.checked);
+    });
+    $('#nfSave', m).onclick = () => {
+      notifySave(read());
+      closeModal();
+      toast('Notification settings saved' + (Sheets.connected() ? ' — syncing to your script' : ''));
+    };
+    $('#nfTest', m).onclick = async () => {
+      notifySave(read());
+      out('Sending a test…');
+      try {
+        const r = await Sheets.call('notifyTest', { message: 'Test from Second Brain. If this reached your phone, you are set.' });
+        out(`Sent to <b>${esc(r.result.delivered)}</b>. If nothing arrives, check the destination above.`);
+        toast('Test sent');
+      } catch (err) { out(`<span class="txt-red">${esc(err.message)}</span>`); }
+    };
+    $('#nfPreview', m).onclick = async () => {
+      notifySave(read());
+      out('Asking the script…');
+      try {
+        const r = (await Sheets.call('notifyPreview', {})).result;
+        if (!r.messages.length) { out('Nothing would be sent right now — every reminder you switched on has nothing to say yet.'); return; }
+        out(`<b>${plural(r.messages.length, 'reminder')}</b> would be sent (channel: ${esc(r.channel)}${r.hasDestination ? '' : ' — <span class="txt-red">no destination set</span>'}):<br><br>`
+          + r.messages.map(x => `<b>${esc(x.title)}</b> <span class="hint">· ${esc(x.when)}</span><br><span style="white-space:pre-line">${esc(x.body)}</span>`).join('<br><br>'));
+      } catch (err) { out(`<span class="txt-red">${esc(err.message)}</span>`); }
+    };
+    $('#nfInstall', m).onclick = async () => {
+      notifySave(read());
+      out('Setting up the hourly schedule…');
+      try {
+        const r = (await Sheets.call('notifyInstall', {})).result;
+        out(r.installed ? `The schedule is on (timezone ${esc(r.timezone)}). Reminders are checked every hour.` : 'Could not switch the schedule on.');
+        Notify.status(m);
+      } catch (err) {
+        out(`<span class="txt-red">${esc(err.message)}</span><br>If this mentions permission, open your Apps Script and run <b>installNotifications</b> once from the editor, accepting what Google asks for.`);
+      }
+    };
+    $('#nfRemove', m).onclick = async () => {
+      try { await Sheets.call('notifyRemove', {}); out('Schedule turned off. Nothing will be sent until you turn it back on.'); Notify.status(m); }
+      catch (err) { out(`<span class="txt-red">${esc(err.message)}</span>`); }
+    };
+    if (connected) Notify.status(m);
+  },
+
+  /** Says whether the script is new enough and whether the schedule is running. */
+  async status(m) {
+    const el = $('#nfStatus', m);
+    if (!el) return;
+    try {
+      const ping = await Sheets.call('ping', {}, 'GET');
+      if (!ping.version || ping.version < 10) {
+        el.textContent = 'Your Apps Script is too old for notifications — update it and deploy a new version';
+        el.closest('.sync-state').dataset.state = 'error';
+        return;
+      }
+      const st = (await Sheets.call('notifyStatus', {})).result;
+      el.textContent = st.installed ? `Schedule is on · timezone ${st.timezone}` : 'Schedule is off — nothing will be sent yet';
+      el.closest('.sync-state').dataset.state = st.installed ? 'idle' : 'off';
+    } catch (err) {
+      el.textContent = 'Could not reach your script: ' + err.message;
+      el.closest('.sync-state').dataset.state = 'error';
+    }
+  }
+};
+
 const usingSheets = () => Sheets.connected() && (Sheets.data.expenses || []).length > 0;
 /** Currency the finance figures are shown in (the sheets hold AED and EGP). */
 const baseCur = () => {
@@ -3947,6 +4143,7 @@ const ACTIONS = {
   toggleAll: () => { UI.txAll = !UI.txAll; render(); },
   exportCSV: el => exportCSV(el.dataset.val),
   sheetsPanel: () => Sheets.openPanel(),
+  notifyPanel: () => Notify.openPanel(),
   sheetSync: () => Sheets.sync('manual'),
   sheetAdd: el => openSheetForm(el.dataset.kind),
   sheetEdit: el => {
@@ -4189,6 +4386,10 @@ function openSettings() {
         <p>Load the sample data to explore, or start with a clean slate.</p>
         <div class="btn-row"><button class="btn btn-ghost" id="loadDemo">${icon('sparkle', 15)} Load demo data</button><button class="btn btn-danger" id="eraseAll">${icon('trash', 15)} Erase all data</button></div>
       </div>
+      <div class="set-section"><h4>Notifications</h4>
+        <p>Reminders on your phone for expenses, journalling, tasks, projects, courses and more — sent by your Apps Script on a schedule, so they arrive with the app closed.</p>
+        <div class="btn-row"><button class="btn btn-ghost" id="openNotify">${icon('clock', 15)} Notification settings</button></div>
+      </div>
       <div class="set-section"><h4>Google Sheets (car &amp; expenses)</h4>
         <p>Two-way sync with <b>Hyundai Elantra</b> and your <b>Expenses</b> workbook, through a Google Apps Script you deploy once.</p>
         <div class="btn-row"><button class="btn btn-ghost" id="openSheets">${icon('sheet', 15)} Google Sheets sync</button></div>
@@ -4240,6 +4441,7 @@ function openSettings() {
   $$('[data-csv]', m).forEach(b => { b.onclick = () => exportCSV(b.dataset.csv); });
   $('#openSync', m).onclick = () => Sync.openPanel();
   $('#openSheets', m).onclick = () => Sheets.openPanel();
+  $('#openNotify', m).onclick = () => Notify.openPanel();
   $('#loadDemo', m).onclick = () => confirmDialog('Load demo data?', 'Your current data will be replaced with sample projects, tasks, finances and more. Export a backup first if you want to keep it.', 'Load demo data', () => {
     const keep = DB.settings; DB = seedDB(); DB.settings = keep; saveDB(); render(); toast('Demo data loaded');
   });

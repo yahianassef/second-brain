@@ -55,6 +55,13 @@ add on one device shows up on the others.
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
 - **Courses** — lessons completed, progress, deadlines, resources
 - **Notes** — categories, tags, pinning, markdown-ish formatting
+- **Notifications** — reminders on your phone for expense logging, journalling, tasks, habits,
+  budgets, project and course status, study and exercise targets, credit cards and car service.
+  Sent by the Apps Script on an hourly schedule, so they arrive with the app closed, through
+  **email**, **ntfy** (free push app, no account) or **Telegram**. Each reminder only fires when it
+  is true — nothing nags you to log expenses on a day you already logged some, and nothing repeats
+  twice in a day. Set it up in **Settings → Notifications**, where *Preview* shows exactly what
+  would be sent right now without sending it.
 
 Every heatmap has a **Month** and a **Year** view: the month view is a calendar of the days themselves, and
 the year view is the same shading across twelve mini months. Shading is relative — the busiest day in view

@@ -45,7 +45,16 @@ function makeSheet(name, grid, opts = {}) {
     getName: () => sh._name,
     setName: n => { sh._name = n; return sh; },
     getDataRange: () => makeRange(sh, 1, 1, Math.max(sh._g.length, 1), Math.max(1, ...sh._g.map(r => r.length))),
-    getRange: (r, c, nr = 1, nc = 1) => makeRange(sh, r, c, nr, nc),
+    getRange: (r, c, nr = 1, nc = 1) => {
+      if (typeof r === 'string') {                     // A1 notation, e.g. 'B1' or 'A2:A200'
+        const m = r.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/i);
+        if (!m) throw new Error('bad range ' + r);
+        const col = t => t.toUpperCase().split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
+        const c1 = col(m[1]), r1 = +m[2], c2 = m[3] ? col(m[3]) : c1, r2 = m[4] ? +m[4] : r1;
+        return makeRange(sh, r1, c1, r2 - r1 + 1, c2 - c1 + 1);
+      }
+      return makeRange(sh, r, c, nr, nc);
+    },
     getLastRow: () => sh._g.length,
     getLastColumn: () => Math.max(1, ...sh._g.map(r => r.length)),
     hideSheet: () => sh,
@@ -140,7 +149,35 @@ const carSS = makeSS('Hyundai Elantra', [carFuel, carService]);
 
 const SpreadsheetApp = { openById: id => (id === 'car' ? carSS : expensesSS) };
 const Session = { getScriptTimeZone: () => 'UTC' };
-const Utilities = { formatDate: date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` };
+const Utilities = {
+  formatDate: (date, tz, fmt) => {
+    const p = n => String(n).padStart(2, '0');
+    if (fmt === 'HH') return p(date.getHours());
+    if (fmt === 'u') return String(date.getDay() === 0 ? 7 : date.getDay());
+    if (fmt === 'yyyy-MM') return `${date.getFullYear()}-${p(date.getMonth() + 1)}`;
+    return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+  }
+};
+// notification plumbing: nothing leaves the page, every send is recorded
+const SENT = [];
+const PROPS = {};
+const PropertiesService = { getScriptProperties: () => ({
+  getProperty: k => (k in PROPS ? PROPS[k] : null),
+  setProperty: (k, v) => { PROPS[k] = v; }
+}) };
+const MailApp = { sendEmail: o => SENT.push({ via: 'email', to: o.to, title: o.subject, body: o.body }) };
+const UrlFetchApp = { fetch: (url, opts) => {
+  const o = opts || {};
+  SENT.push({ via: /ntfy/.test(url) ? 'ntfy' : 'telegram', url,
+    title: (o.headers && o.headers.Title) || '', body: String(o.payload || '') });
+  return { getContentText: () => '{}', getResponseCode: () => 200 };
+} };
+const TRIGGERS = [];
+const ScriptApp = {
+  newTrigger: fn => ({ timeBased: () => ({ everyHours: () => ({ create: () => { TRIGGERS.push(fn); return fn; } }) }) }),
+  getProjectTriggers: () => TRIGGERS.map(fn => ({ getHandlerFunction: () => fn })),
+  deleteTrigger: tr => { const i = TRIGGERS.indexOf(tr.getHandlerFunction()); if (i >= 0) TRIGGERS.splice(i, 1); }
+};
 const DriveApp = { getFileById: () => ({ getLastUpdated: () => new Date() }) };
 const ContentService = { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType() { return this; } }) };
 
@@ -149,9 +186,9 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
 
 (async () => {
   const src = await (await fetch('Code.gs?t=' + Date.now(), { cache: 'no-store' })).text();
-  const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService',
-    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable, setCardPaid };')
-    (SpreadsheetApp, Session, Utilities, DriveApp, ContentService);
+  const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService', 'PropertiesService', 'MailApp', 'UrlFetchApp', 'ScriptApp',
+    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable, setCardPaid, writeBrain, readBrain, notifyPreview, notifyDue, notifyTest, notifySend, runNotifications, installNotifications, removeNotifications, notifyTriggerStatus, addExpense };')
+    (SpreadsheetApp, Session, Utilities, DriveApp, ContentService, PropertiesService, MailApp, UrlFetchApp, ScriptApp);
   api.CONFIG.SECRET = '';
   api.CONFIG.CAR_SHEET_ID = 'car';
   api.CONFIG.EXPENSES_SHEET_ID = 'exp';
@@ -279,6 +316,94 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
   threw = '';
   try { api.setCardPaid({ card: 'ADCB Touchpoints Credit Card', row: 3, name: 'Not a real charge', amount: 1, paid: true }); } catch (e) { threw = e.message; }
   ok('an unknown charge is never guessed at', /Could not find/.test(threw), threw);
+
+  // ---- notifications: rules only fire when they are actually true ----
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const TODAY = iso(new Date());
+  const daysAgo = n => iso(new Date(Date.now() - n * 86400000));
+  const allOn = Object.fromEntries(['expenses','journal','tasks','projects','courses','habits','study','exercise','budgets','cards','car','digest']
+    .map(k => [k, { on: true, time: '09:00' }]));
+  const brainWith = extra => Object.assign({
+    settings: { notify: { on: true, channel: 'ntfy', to: 'my-topic', cats: allOn }, studyWeekly: 10, exerciseWeekly: 4 },
+    tasks: [], projects: [], journal: [], courses: [], habits: [], habitLogs: [], study: [], workouts: [], budgets: []
+  }, extra);
+  const say = (extra, key) => {
+    api.writeBrain(brainWith(extra));
+    const p = api.notifyPreview();
+    const hit = p.messages.find(m => m.category === key);
+    return hit ? hit.body : '';
+  };
+
+  ok('journal reminder fires when today is empty', /No entry yet today/.test(say({ journal: [{ date: daysAgo(1) }] }, 'journal')));
+  ok('journal reminder counts the streak', /3 day streak|3 days streak/.test(say({ journal: [1,2,3].map(n => ({ date: daysAgo(n) })) }, 'journal')),
+     say({ journal: [1,2,3].map(n => ({ date: daysAgo(n) })) }, 'journal'));
+  ok('journal stays quiet once written', say({ journal: [{ date: TODAY }] }, 'journal') === '');
+  ok('tasks name what is overdue and due',
+     /1 task overdue/.test(say({ tasks: [{ title: 'Pay bill', due: daysAgo(2), status: 'To Do' }, { title: 'Call garage', due: TODAY, status: 'To Do' }] }, 'tasks')));
+  ok('tasks stay quiet when nothing is due', say({ tasks: [{ title: 'Later', due: daysAgo(-9), status: 'To Do' }] }, 'tasks') === '');
+  ok('projects flag a deadline inside a week',
+     /Due within a week[\s\S]*Website/.test(say({ projects: [{ name: 'Website', status: 'Active', deadline: daysAgo(-3), updated: TODAY }] }, 'projects')));
+  ok('projects flag one left untouched',
+     /Not updated[\s\S]*Old thing/.test(say({ projects: [{ name: 'Old thing', status: 'Active', updated: daysAgo(30), progress: 20 }] }, 'projects')));
+  ok('completed projects are left alone', say({ projects: [{ name: 'Done', status: 'Completed', updated: daysAgo(40) }] }, 'projects') === '');
+  ok('courses flag a week with no lessons',
+     /Spanish/.test(say({ courses: [{ name: 'Spanish', status: 'In Progress', updated: daysAgo(10), lessonsDone: 3, lessonsTotal: 20 }] }, 'courses')));
+  ok('habits list only what is still open',
+     /1 habit still open[\s\S]*Read/.test(say({ habits: [{ id: 'h1', name: 'Read' }, { id: 'h2', name: 'Water' }], habitLogs: [{ habitId: 'h2', date: TODAY }] }, 'habits')));
+  ok('study compares against the weekly target',
+     /of your 10h target/.test(say({ study: [{ date: daysAgo(1), hours: 2 }] }, 'study')));
+  ok('exercise counts this week', /1 of 4 workouts/.test(say({ workouts: [{ date: daysAgo(2) }] }, 'exercise')));
+  ok('budgets warn only past 90%',
+     say({ budgets: [{ category: 'Food', limit: 100000 }] }, 'budgets') === '' &&
+     /Food/.test(say({ budgets: [{ category: 'Food', limit: 1 }] }, 'budgets')));
+  ok('cards report what is owed', /Touchpoints/.test(say({}, 'cards')));
+  ok('the digest always has something to say', say({}, 'digest').length > 10);
+
+  // expense reminder reacts to a row added today
+  ok('expense reminder fires when nothing is logged today', /Nothing logged today/.test(say({}, 'expenses')));
+  api.invalidateTabs();
+  api.addExpense({ name: 'Notify test coffee', amount: 9, date: TODAY, currency: 'AED' });
+  api.invalidateTabs();
+  ok('expense reminder goes quiet once something is logged', say({}, 'expenses') === '');
+
+  // ---- scheduling: the right hour, the right day, and only once a day ----
+  api.writeBrain(brainWith({ journal: [{ date: daysAgo(1) }] }));
+  SENT.length = 0;
+  const preview = api.notifyPreview();
+  ok('preview sends nothing', SENT.length === 0 && preview.messages.length > 0, preview.messages.length + ' messages previewed');
+  const hourNow = String(new Date().getHours()).padStart(2, '0');
+  const otherHour = String((new Date().getHours() + 3) % 24).padStart(2, '0');
+  api.writeBrain(brainWith({ journal: [{ date: daysAgo(1) }], settings: { notify: { on: true, channel: 'ntfy', to: 't', cats: { journal: { on: true, time: otherHour + ':00' } } }, studyWeekly: 10, exerciseWeekly: 4 } }));
+  ok('nothing fires outside its hour', api.notifyDue(false).due.length === 0);
+  api.writeBrain(brainWith({ journal: [{ date: daysAgo(1) }], settings: { notify: { on: true, channel: 'ntfy', to: 't', cats: { journal: { on: true, time: hourNow + ':00' } } }, studyWeekly: 10, exerciseWeekly: 4 } }));
+  ok('it fires in its own hour', api.notifyDue(false).due.map(d => d.key).join() === 'journal');
+  SENT.length = 0;
+  const run1 = api.runNotifications();
+  ok('sending reaches the chosen channel', SENT.length === 1 && SENT[0].via === 'ntfy' && /No entry yet today/.test(SENT[0].body),
+     JSON.stringify(SENT[0] && { via: SENT[0].via, title: SENT[0].title }));
+  const run2 = api.runNotifications();
+  ok('the same reminder is not repeated the same day', run2.sent.length === 0, 'first run sent ' + run1.sent.join());
+  api.writeBrain(brainWith({ journal: [{ date: daysAgo(1) }], settings: { notify: { on: false, channel: 'ntfy', to: 't', cats: { journal: { on: true, time: hourNow + ':00' } } } } }));
+  SENT.length = 0;
+  api.runNotifications();
+  ok('the master switch silences everything', SENT.length === 0);
+
+  // ---- channels ----
+  SENT.length = 0;
+  api.notifySend('T', 'B', { channel: 'email', to: 'me@example.com' });
+  api.notifySend('T', 'B', { channel: 'ntfy', to: 'https://ntfy.sh/my-topic' });
+  api.notifySend('T', 'B', { channel: 'telegram', to: '123:ABC|456' });
+  ok('all three channels deliver', SENT.map(x => x.via).join() === 'email,ntfy,telegram', SENT.map(x => x.via).join());
+  ok('an ntfy URL is accepted as well as a bare topic', /ntfy\.sh\/my-topic/.test(SENT[1].url), SENT[1].url);
+  let notifyThrew = '';
+  try { api.notifySend('T', 'B', { channel: 'telegram', to: 'just-a-token' }); } catch (e) { notifyThrew = e.message; }
+  ok('a half-filled Telegram setting is refused', /botToken\|chatId/.test(notifyThrew), notifyThrew);
+
+  // ---- the schedule itself ----
+  ok('installing creates one hourly trigger', api.installNotifications().installed === true && TRIGGERS.length === 1, TRIGGERS.length + ' trigger(s)');
+  api.installNotifications();
+  ok('installing twice does not stack up', TRIGGERS.length === 1, TRIGGERS.length + ' trigger(s)');
+  ok('removing takes it away', api.removeNotifications().installed === false && TRIGGERS.length === 0);
 
   const failed = R.filter(r => r.startsWith('FAIL')).length;
   document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;

@@ -110,7 +110,7 @@ function handle(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 9 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 10 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -123,6 +123,12 @@ function handle(e, body) {
       case 'updateRow':     return json({ ok: true, result: updateRow(body) });
       case 'deleteRow':     return json({ ok: true, result: deleteRow(body) });
       case 'setCardPaid':   return json({ ok: true, result: setCardPaid(body) });
+      case 'notifyPreview': return json({ ok: true, result: notifyPreview() });
+      case 'notifyTest':    return json({ ok: true, result: notifyTest(body.message) });
+      case 'notifyStatus':  return json({ ok: true, result: notifyTriggerStatus() });
+      case 'notifyInstall': return json({ ok: true, result: installNotifications() });
+      case 'notifyRemove':  return json({ ok: true, result: removeNotifications() });
+      case 'notifyRun':     return json({ ok: true, result: runNotifications() });
       default:              return json({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -1156,4 +1162,359 @@ function stamp() {
     car: t(CONFIG.CAR_SHEET_ID),
     expenses: t(CONFIG.EXPENSES_SHEET_ID)
   };
+}
+
+/* ============================================================
+   NOTIFICATIONS
+   A time-driven trigger runs hourly, works out which reminders are due from
+   your own data, and pushes them to your phone. What to send and when comes
+   from the app (Settings → Notifications), carried over in the synced brain,
+   so nothing needs editing here.
+
+   ONE-TIME SETUP: run installNotifications() from the editor once and accept
+   the permissions Google asks for (schedule, send mail / call the push
+   service). removeNotifications() takes the schedule away again.
+   ============================================================ */
+
+var NOTIFY_STATE_KEY = 'secondBrainNotifyState';
+
+/** Defaults, overridden per category by whatever the app has saved. */
+var NOTIFY_DEFAULTS = {
+  expenses: { time: '21:00' },
+  journal:  { time: '21:30' },
+  tasks:    { time: '08:00' },
+  projects: { time: '09:00', day: 'Sun' },
+  courses:  { time: '18:00', day: 'Wed' },
+  habits:   { time: '20:00' },
+  study:    { time: '19:00', day: 'Fri' },
+  exercise: { time: '19:30', day: 'Fri' },
+  budgets:  { time: '10:00' },
+  cards:    { time: '10:30', day: 'Mon' },
+  car:      { time: '09:30', day: 'Sat' },
+  digest:   { time: '07:30' }
+};
+
+function notifySettings() {
+  var brain = readBrain() || {};
+  var s = (brain.settings && brain.settings.notify) || {};
+  return {
+    on: s.on !== false,
+    channel: s.channel || 'email',
+    to: s.to || '',
+    cats: s.cats || {}
+  };
+}
+
+function notifyTZ() { return Session.getScriptTimeZone(); }
+function notifyNow(tz) { return new Date(); }
+var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function notifyState() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(NOTIFY_STATE_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function saveNotifyState(st) {
+  PropertiesService.getScriptProperties().setProperty(NOTIFY_STATE_KEY, JSON.stringify(st));
+}
+
+/* ---------------- delivery ---------------- */
+
+/** Sends one message on whichever channel is configured. Returns a short note. */
+function notifySend(title, body, settings) {
+  var s = settings || notifySettings();
+  var channel = s.channel || 'email';
+  var to = String(s.to || '').trim();
+
+  if (channel === 'ntfy') {
+    if (!to) throw new Error('No ntfy topic set');
+    var topic = to.replace(/^https?:\/\/ntfy\.sh\//i, '');
+    UrlFetchApp.fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
+      method: 'post',
+      contentType: 'text/plain; charset=utf-8',
+      payload: body,
+      headers: { Title: title, Tags: 'brain', Priority: 'default' },
+      muteHttpExceptions: true
+    });
+    return 'ntfy:' + topic;
+  }
+  if (channel === 'telegram') {
+    var parts = to.split('|');
+    var token = (parts[0] || '').trim(), chat = (parts[1] || '').trim();
+    if (!token || !chat) throw new Error('Telegram needs "botToken|chatId"');
+    UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ chat_id: chat, text: title + '\n' + body, disable_web_page_preview: true }),
+      muteHttpExceptions: true
+    });
+    return 'telegram:' + chat;
+  }
+  var address = to || Session.getEffectiveUser().getEmail();
+  MailApp.sendEmail({ to: address, subject: title, body: body });
+  return 'email:' + address;
+}
+
+/* ---------------- the rules ----------------
+   Each returns a message when it should fire, or '' when there is nothing to
+   say. Every one reads real data, so a reminder only arrives when it is true. */
+
+function notifyContext() {
+  var tz = notifyTZ();
+  var now = new Date();
+  var brain = readBrain() || {};
+  var arr = function (k) { return Array.isArray(brain[k]) ? brain[k] : []; };
+  return {
+    tz: tz, now: now,
+    today: Utilities.formatDate(now, tz, 'yyyy-MM-dd'),
+    month: Utilities.formatDate(now, tz, 'yyyy-MM'),
+    brain: brain,
+    tasks: arr('tasks'), projects: arr('projects'), journal: arr('journal'),
+    courses: arr('courses'), habits: arr('habits'), habitLogs: arr('habitLogs'),
+    study: arr('study'), workouts: arr('workouts'), budgets: arr('budgets'),
+    settings: brain.settings || {}
+  };
+}
+function daysBetween(a, b) { return Math.round((new Date(a) - new Date(b)) / 86400000); }
+function notifyPlural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+
+var NOTIFY_RULES = {
+  expenses: function (c) {
+    var todays = readExpenses().filter(function (r) { return r.date === c.today; });
+    if (todays.length) return '';
+    return 'Nothing logged today. Add what you spent while you still remember it.';
+  },
+  journal: function (c) {
+    if (c.journal.some(function (j) { return j.date === c.today; })) return '';
+    var streak = 0, d = new Date(c.now);
+    for (var i = 0; i < 365; i++) {
+      d.setDate(d.getDate() - (i === 0 ? 1 : 1));
+      var ds = Utilities.formatDate(d, c.tz, 'yyyy-MM-dd');
+      if (c.journal.some(function (j) { return j.date === ds; })) streak++; else break;
+    }
+    return 'No entry yet today.' + (streak ? ' You are on a ' + streak + '-day streak — keep it going.' : '');
+  },
+  tasks: function (c) {
+    var open = c.tasks.filter(function (t) { return t.status !== 'Done'; });
+    var overdue = open.filter(function (t) { return t.due && t.due < c.today; });
+    var today = open.filter(function (t) { return t.due === c.today; });
+    if (!overdue.length && !today.length) return '';
+    var lines = [];
+    if (overdue.length) lines.push(notifyPlural(overdue.length, 'task') + ' overdue');
+    if (today.length) lines.push(notifyPlural(today.length, 'task') + ' due today');
+    var names = today.concat(overdue).slice(0, 5).map(function (t) { return '• ' + t.title; });
+    return lines.join(' · ') + '\n' + names.join('\n');
+  },
+  projects: function (c) {
+    var active = c.projects.filter(function (p) { return p.status === 'Active'; });
+    if (!active.length) return '';
+    var stale = active.filter(function (p) {
+      var when = p.updated || p.created;
+      return when && daysBetween(c.today, when) >= 7;
+    });
+    var soon = active.filter(function (p) {
+      return p.deadline && p.deadline >= c.today && daysBetween(p.deadline, c.today) <= 7;
+    });
+    if (!stale.length && !soon.length) return '';
+    var out = [];
+    if (soon.length) out.push('Due within a week:\n' + soon.map(function (p) { return '• ' + p.name + ' — ' + p.deadline; }).join('\n'));
+    if (stale.length) out.push('Not updated in a while:\n' + stale.slice(0, 5).map(function (p) { return '• ' + p.name + ' (' + (p.progress || 0) * 1 + '%)'; }).join('\n'));
+    return out.join('\n\n');
+  },
+  courses: function (c) {
+    var going = c.courses.filter(function (x) { return x.status === 'In Progress'; });
+    if (!going.length) return '';
+    var stale = going.filter(function (x) {
+      var when = x.updated || x.created;
+      return when && daysBetween(c.today, when) >= 7;
+    });
+    if (!stale.length) return '';
+    return 'No lessons logged in a week:\n' + stale.map(function (x) {
+      var done = Number(x.lessonsDone) || 0, total = Number(x.lessonsTotal) || 0;
+      return '• ' + x.name + (total ? ' — ' + done + '/' + total : '');
+    }).join('\n');
+  },
+  habits: function (c) {
+    if (!c.habits.length) return '';
+    var doneToday = {};
+    c.habitLogs.forEach(function (l) { if (l.date === c.today) doneToday[l.habitId] = true; });
+    var missed = c.habits.filter(function (h) { return !doneToday[h.id]; });
+    if (!missed.length) return '';
+    return notifyPlural(missed.length, 'habit') + ' still open today:\n' + missed.slice(0, 6).map(function (h) { return '• ' + h.name; }).join('\n');
+  },
+  study: function (c) {
+    var target = Number(c.settings.studyWeekly) || 0;
+    if (!target) return '';
+    var since = Utilities.formatDate(new Date(c.now.getTime() - 6 * 86400000), c.tz, 'yyyy-MM-dd');
+    var hours = c.study.filter(function (s) { return s.date >= since; })
+      .reduce(function (t, s) { return t + (Number(s.hours) || 0); }, 0);
+    if (hours >= target) return 'Studied ' + hours.toFixed(1) + 'h this week — target of ' + target + 'h met.';
+    return 'Studied ' + hours.toFixed(1) + 'h of your ' + target + 'h target this week.';
+  },
+  exercise: function (c) {
+    var target = Number(c.settings.exerciseWeekly) || 0;
+    if (!target) return '';
+    var since = Utilities.formatDate(new Date(c.now.getTime() - 6 * 86400000), c.tz, 'yyyy-MM-dd');
+    var count = c.workouts.filter(function (w) { return w.date >= since; }).length;
+    if (count >= target) return count + ' workouts this week — target of ' + target + ' met.';
+    return count + ' of ' + target + ' workouts done this week.';
+  },
+  budgets: function (c) {
+    if (!c.budgets.length) return '';
+    var spent = {};
+    readExpenses().forEach(function (r) {
+      if (String(r.date || '').slice(0, 7) !== c.month) return;
+      if ((r.currency || 'AED') !== 'AED') return;
+      spent[r.category] = (spent[r.category] || 0) + (Number(r.amount) || 0);
+    });
+    var hot = [];
+    c.budgets.forEach(function (b) {
+      var limit = Number(b.limit) || 0;
+      if (!limit) return;
+      var used = spent[b.category] || 0;
+      var pct = used / limit * 100;
+      if (pct >= 90) hot.push('• ' + b.category + ' — ' + Math.round(pct) + '% (' + Math.round(used) + ' of ' + limit + ')');
+    });
+    if (!hot.length) return '';
+    return 'Budgets at or past 90% this month:\n' + hot.join('\n');
+  },
+  cards: function (c) {
+    var cards = readCards().filter(function (x) { return Number(x.debt) > 0; });
+    if (!cards.length) return '';
+    return 'Outstanding on your cards:\n' + cards.map(function (x) {
+      return '• ' + x.name + ' — ' + (x.currency || 'AED') + ' ' + x.debt + ' (' + x.unpaid + ' open)';
+    }).join('\n');
+  },
+  car: function (c) {
+    var fuel = readFuel(), service = readService();
+    if (!fuel.length && !service.length) return '';
+    var lastOdo = 0;
+    fuel.forEach(function (f) { if (Number(f.odometer) > lastOdo) lastOdo = Number(f.odometer); });
+    var last = null;
+    service.forEach(function (s) { if (!last || String(s.date) > String(last.date)) last = s; });
+    if (!last) return '';
+    var km = last.odometer ? lastOdo - Number(last.odometer) : 0;
+    var days = last.date ? daysBetween(c.today, last.date) : 0;
+    if (km < 5000 && days < 180) return '';
+    var bits = [];
+    if (km >= 5000) bits.push(km.toLocaleString() + ' km since the last service');
+    if (days >= 180) bits.push(days + ' days since the last service');
+    return 'Service may be due: ' + bits.join(', ') + '.\nLast was ' + last.item + ' on ' + last.date + '.';
+  },
+  digest: function (c) {
+    var open = c.tasks.filter(function (t) { return t.status !== 'Done'; });
+    var overdue = open.filter(function (t) { return t.due && t.due < c.today; }).length;
+    var due = open.filter(function (t) { return t.due === c.today; }).length;
+    var spentToday = readExpenses().filter(function (r) { return r.date === c.today; });
+    var monthSpend = 0;
+    readExpenses().forEach(function (r) {
+      if (String(r.date || '').slice(0, 7) === c.month && (r.currency || 'AED') === 'AED') monthSpend += Number(r.amount) || 0;
+    });
+    var lines = [
+      notifyPlural(due, 'task') + ' due today' + (overdue ? ', ' + overdue + ' overdue' : ''),
+      'Spent this month: AED ' + Math.round(monthSpend) + (spentToday.length ? ' · ' + spentToday.length + ' logged today' : ''),
+      c.journal.some(function (j) { return j.date === c.today; }) ? 'Journal written' : 'Journal not written yet'
+    ];
+    return lines.join('\n');
+  }
+};
+
+var NOTIFY_TITLES = {
+  expenses: 'Log today’s spending',
+  journal: 'Journal reminder',
+  tasks: 'Tasks today',
+  projects: 'Project check-in',
+  courses: 'Course progress',
+  habits: 'Habits today',
+  study: 'Study this week',
+  exercise: 'Exercise this week',
+  budgets: 'Budget warning',
+  cards: 'Credit cards',
+  car: 'Car maintenance',
+  digest: 'Your day'
+};
+
+/** Which categories are due in this hour, and what each would say. */
+function notifyDue(force) {
+  applyUserConfig();
+  var s = notifySettings();
+  var c = notifyContext();
+  var hour = Utilities.formatDate(c.now, c.tz, 'HH');
+  var day = DAY_NAMES[Number(Utilities.formatDate(c.now, c.tz, 'u')) % 7];
+  var state = notifyState();
+  var out = [];
+
+  Object.keys(NOTIFY_RULES).forEach(function (key) {
+    var cfg = s.cats[key] || {};
+    var def = NOTIFY_DEFAULTS[key] || {};
+    var enabled = cfg.on === true;
+    if (!force && (!s.on || !enabled)) return;
+    var time = cfg.time || def.time || '09:00';
+    var wantDay = cfg.day || def.day || '';
+    if (!force) {
+      if (time.slice(0, 2) !== hour) return;
+      if (wantDay && wantDay !== day) return;
+      if (state[key] === c.today) return;            // already sent today
+    }
+    var body = '';
+    try { body = NOTIFY_RULES[key](c) || ''; } catch (err) { body = ''; }
+    if (!body) return;
+    out.push({ key: key, title: NOTIFY_TITLES[key] || key, body: body, time: time, day: wantDay });
+  });
+  return { settings: { on: s.on, channel: s.channel, hasDestination: !!s.to }, hour: hour, day: day, today: c.today, due: out };
+}
+
+/** The hourly trigger. */
+function runNotifications() {
+  var plan = notifyDue(false);
+  if (!plan.settings.on) return plan;
+  var state = notifyState();
+  var sent = [];
+  plan.due.forEach(function (item) {
+    try {
+      notifySend('Second Brain · ' + item.title, item.body, null);
+      state[item.key] = plan.today;
+      sent.push(item.key);
+    } catch (err) {
+      // leave it unsent so the next hour tries again
+    }
+  });
+  if (sent.length) saveNotifyState(state);
+  return { sent: sent, considered: plan.due.length };
+}
+
+/** Everything that WOULD be sent right now, without sending anything. */
+function notifyPreview() {
+  var plan = notifyDue(true);
+  return {
+    channel: plan.settings.channel,
+    hasDestination: plan.settings.hasDestination,
+    enabled: plan.settings.on,
+    now: plan.today + ' ' + plan.hour + ':00 ' + plan.day,
+    messages: plan.due.map(function (d) {
+      return { category: d.key, title: d.title, when: (d.day ? d.day + ' ' : 'daily ') + d.time, body: d.body };
+    })
+  };
+}
+
+/** Sends one message now, to prove the channel works. */
+function notifyTest(body) {
+  var where = notifySend('Second Brain · test', body ? String(body) : 'If you can read this, notifications are working.', null);
+  return { delivered: where };
+}
+
+/** Creates the hourly schedule (safe to run twice). */
+function installNotifications() {
+  removeNotifications();
+  ScriptApp.newTrigger('runNotifications').timeBased().everyHours(1).create();
+  return notifyTriggerStatus();
+}
+function removeNotifications() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'runNotifications') ScriptApp.deleteTrigger(t);
+  });
+  return { installed: false };
+}
+function notifyTriggerStatus() {
+  var found = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'runNotifications'; });
+  return { installed: found.length > 0, count: found.length, timezone: notifyTZ(), state: notifyState() };
 }
