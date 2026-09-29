@@ -174,6 +174,20 @@ each task, note or transaction wins, and deletions are remembered for 120 days s
 Download `app.html` (or `m.html`) and open it. That is the whole application — one file, no
 dependencies, works offline. It keeps syncing with your other devices through whichever sync you set up.
 
+## Sample data
+
+A new device starts **empty**. Nothing is invented for you. If you ever had the old sample set,
+**Settings → Sample data → Remove sample data everywhere** finds everything matching it and deletes
+it *with tombstones*, so it disappears from your other devices on their next sync instead of
+syncing straight back. Anything you created yourself is left alone.
+
+## Connecting a phone
+
+In the Google Sheets panel on a device that already works, press **Copy phone setup link** and open
+that link on the phone. It carries the Web App URL and secret in the address, applies them, and
+clears the address bar. On iPhone, add the app to the Home Screen afterwards — Safari clears the
+storage of sites you have not opened for a while, which takes your sync settings with it.
+
 ## Data storage
 
 Everything lives in the browser's `localStorage`, plus whichever sync you connect. **Settings → Backup**

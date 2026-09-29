@@ -172,6 +172,7 @@ const UrlFetchApp = { fetch: (url, opts) => {
     title: (o.headers && o.headers.Title) || '', body: String(o.payload || '') });
   return { getContentText: () => '{}', getResponseCode: () => 200 };
 } };
+const LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
 const TRIGGERS = [];
 const ScriptApp = {
   newTrigger: fn => ({ timeBased: () => ({ everyHours: () => ({ create: () => { TRIGGERS.push(fn); return fn; } }) }) }),
@@ -186,9 +187,9 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
 
 (async () => {
   const src = await (await fetch('Code.gs?t=' + Date.now(), { cache: 'no-store' })).text();
-  const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService', 'PropertiesService', 'MailApp', 'UrlFetchApp', 'ScriptApp',
-    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable, setCardPaid, writeBrain, readBrain, notifyPreview, notifyDue, notifyTest, notifySend, runNotifications, installNotifications, removeNotifications, notifyTriggerStatus, addExpense };')
-    (SpreadsheetApp, Session, Utilities, DriveApp, ContentService, PropertiesService, MailApp, UrlFetchApp, ScriptApp);
+  const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService', 'PropertiesService', 'MailApp', 'UrlFetchApp', 'ScriptApp', 'LockService',
+    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable, setCardPaid, writeBrain, readBrain, notifyPreview, notifyDue, notifyTest, notifySend, runNotifications, installNotifications, removeNotifications, notifyTriggerStatus, addExpense, mergeBrain, pushAll };')
+    (SpreadsheetApp, Session, Utilities, DriveApp, ContentService, PropertiesService, MailApp, UrlFetchApp, ScriptApp, LockService);
   api.CONFIG.SECRET = '';
   api.CONFIG.CAR_SHEET_ID = 'car';
   api.CONFIG.EXPENSES_SHEET_ID = 'exp';
@@ -335,7 +336,7 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
   };
 
   ok('journal reminder fires when today is empty', /No entry yet today/.test(say({ journal: [{ date: daysAgo(1) }] }, 'journal')));
-  ok('journal reminder counts the streak', /3 day streak|3 days streak/.test(say({ journal: [1,2,3].map(n => ({ date: daysAgo(n) })) }, 'journal')),
+  ok('journal reminder counts the streak', /3-day streak/.test(say({ journal: [1,2,3].map(n => ({ date: daysAgo(n) })) }, 'journal')),
      say({ journal: [1,2,3].map(n => ({ date: daysAgo(n) })) }, 'journal'));
   ok('journal stays quiet once written', say({ journal: [{ date: TODAY }] }, 'journal') === '');
   ok('tasks name what is overdue and due',
@@ -404,6 +405,32 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
   api.installNotifications();
   ok('installing twice does not stack up', TRIGGERS.length === 1, TRIGGERS.length + ' trigger(s)');
   ok('removing takes it away', api.removeNotifications().installed === false && TRIGGERS.length === 0);
+
+  // ---- app data: a push must not wipe what another device wrote ----
+  const older = Date.now() - 600000, newer = Date.now() - 1000;   // real timestamps: tombstones older than 120 days are pruned
+  const laptop = { settings: { name: 'Y', ts: older }, journal: [{ id: 'j1', title: 'laptop entry', ts: newer }], courses: [{ id: 'c1', lessonsDone: 5, ts: older }], notes: [], trash: [] };
+  const phone  = { settings: { name: 'Y', ts: older }, journal: [], courses: [{ id: 'c1', lessonsDone: 9, ts: newer }], notes: [{ id: 'n1', title: 'phone note', ts: newer }], trash: [] };
+  const both = api.mergeBrain(laptop, phone);
+  ok('a push keeps the other device’s journal entry', both.journal.length === 1 && both.journal[0].title === 'laptop entry');
+  ok('a push keeps the other device’s note', both.notes.length === 1 && both.notes[0].title === 'phone note');
+  ok('the newer edit of the same course wins', both.courses[0].lessonsDone === 9, String(both.courses[0].lessonsDone));
+  ok('merging is order-independent',
+     JSON.stringify(api.mergeBrain(phone, laptop).courses) === JSON.stringify(both.courses));
+  const deleted = api.mergeBrain({ journal: [], trash: [{ id: 'j1', ts: newer + 1 }] }, laptop);
+  ok('a deletion is not undone by the other copy', deleted.journal.length === 0 && deleted.trash.length === 1);
+  const reAdded = api.mergeBrain({ journal: [], trash: [{ id: 'j1', ts: older }] }, laptop);
+  ok('an edit after the deletion brings it back', reAdded.journal.length === 1);
+  ok('the newer settings win', api.mergeBrain({ settings: { name: 'old', ts: older } }, { settings: { name: 'new', ts: newer } }).settings.name === 'new');
+  ok('a first sync from an empty side keeps everything', api.mergeBrain(null, laptop).journal.length === 1 && api.mergeBrain(laptop, null).journal.length === 1);
+  ok('lists the script does not know about are carried over',
+     JSON.stringify(api.mergeBrain({ future: [1] }, { future: [1, 2] }).future) === '[1,2]');
+  // end to end through pushAll, which is what a device actually calls
+  api.writeBrain(phone);
+  api.pushAll({ brain: laptop });
+  const stored = api.readBrain();
+  ok('pushing through the API merges instead of overwriting',
+     stored.journal.length === 1 && stored.notes.length === 1 && stored.courses[0].lessonsDone === 9,
+     'journal ' + stored.journal.length + ', notes ' + stored.notes.length + ', lessons ' + stored.courses[0].lessonsDone);
 
   const failed = R.filter(r => r.startsWith('FAIL')).length;
   document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;

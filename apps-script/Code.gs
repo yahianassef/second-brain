@@ -100,6 +100,19 @@ function doPost(e) {
 
 function handle(e, body) {
   applyUserConfig();
+  var lock = null;
+  if ((body.action || (e && e.parameter && e.parameter.action)) === 'push') {
+    lock = LockService.getScriptLock();
+    try { lock.waitLock(20000); } catch (lockErr) { lock = null; }
+  }
+  try {
+    return handleInner(e, body);
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (relErr) { /* already gone */ } }
+  }
+}
+
+function handleInner(e, body) {
   var p = e && e.parameter ? e.parameter : {};
   var action = body.action || p.action || 'pull';
   var secret = body.secret || p.secret || '';
@@ -110,7 +123,7 @@ function handle(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 10 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 11 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -1001,7 +1014,7 @@ function pushAll(data) {
   (data.edits || []).forEach(function (e) { updateRow(e); result.edits++; });
   (data.deletes || []).forEach(function (d) { deleteRow(d); result.deletes++; });
   (data.cardStatus || []).forEach(function (st) { setCardPaid(st); result.cardStatus++; });
-  if (data.brain) { writeBrain(data.brain); result.brain = true; }
+  if (data.brain) { writeBrain(mergeBrain(readBrain(), data.brain)); result.brain = true; }
   return result;
 }
 
@@ -1019,6 +1032,72 @@ function brainTab() {
     sh.hideSheet();
   }
   return sh;
+}
+
+var BRAIN_COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal',
+  'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts'];
+var BRAIN_TOMB_DAYS = 120;
+
+/**
+ * Merges two copies of the app's data. For each item the most recently touched
+ * copy wins; an item deleted on one device stays deleted everywhere, because
+ * deletions are carried as tombstones with their own timestamp.
+ * Either side may be null (a first sync, or a device with nothing yet).
+ */
+function mergeBrain(mine, theirs) {
+  if (!mine) return theirs || null;
+  if (!theirs) return mine;
+  var out = {};
+  // anything the apps add later (settings, new lists) is carried over untouched
+  var keys = {};
+  Object.keys(mine).forEach(function (k) { keys[k] = true; });
+  Object.keys(theirs).forEach(function (k) { keys[k] = true; });
+
+  var tomb = {};
+  [mine.trash, theirs.trash].forEach(function (list) {
+    (list || []).forEach(function (t) {
+      if (t && t.id && (!tomb[t.id] || t.ts > tomb[t.id])) tomb[t.id] = t.ts;
+    });
+  });
+
+  Object.keys(keys).forEach(function (key) {
+    if (key === 'trash') return;
+    if (BRAIN_COLLECTIONS.indexOf(key) === -1) {
+      if (key === 'settings') {
+        var ms = mine.settings || {}, ts = theirs.settings || {};
+        var newer = (Number(ts.ts) || 0) > (Number(ms.ts) || 0) ? ts : ms;
+        var older = newer === ts ? ms : ts;
+        var merged = {};
+        Object.keys(older).forEach(function (k) { merged[k] = older[k]; });
+        Object.keys(newer).forEach(function (k) { merged[k] = newer[k]; });
+        out.settings = merged;
+      } else {
+        out[key] = theirs[key] !== undefined ? theirs[key] : mine[key];
+      }
+      return;
+    }
+    var byId = {};
+    (Array.isArray(mine[key]) ? mine[key] : []).forEach(function (x) { if (x && x.id) byId[x.id] = x; });
+    (Array.isArray(theirs[key]) ? theirs[key] : []).forEach(function (x) {
+      if (!x || !x.id) return;
+      var have = byId[x.id];
+      if (!have || (Number(x.ts) || 0) > (Number(have.ts) || 0)) byId[x.id] = x;
+    });
+    var list = [];
+    Object.keys(byId).forEach(function (id) {
+      var item = byId[id];
+      if (tomb[id] && tomb[id] >= (Number(item.ts) || 0)) return;   // deleted after its last edit
+      list.push(item);
+    });
+    list.sort(function (a, b) { return (Number(b.ts) || 0) - (Number(a.ts) || 0); });
+    out[key] = list;
+  });
+
+  var cutoff = Date.now() - BRAIN_TOMB_DAYS * 86400000;
+  out.trash = Object.keys(tomb)
+    .filter(function (id) { return tomb[id] > cutoff; })
+    .map(function (id) { return { id: id, ts: tomb[id] }; });
+  return out;
 }
 
 function readBrain() {

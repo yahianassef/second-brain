@@ -926,12 +926,15 @@ function loadDB() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) return normalizeDB(JSON.parse(raw));
   } catch (e) { console.warn('Could not read saved data', e); }
-  return seedDB();
+  return emptyDB();   // a new device starts empty; sample data is opt-in from Settings
 }
 function saveDB() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(DB));
     if (typeof Sync !== 'undefined') Sync.queue();
+    // app data (journal, courses, tasks…) rides in the brain blob, so the sheets
+    // sync has to be told too — queued row-writes alone would never mention it
+    if (typeof Sheets !== 'undefined') Sheets.queue();
     const t = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     $('#saveState').textContent = `Saved locally · ${t}`;
     const p = $('#pulse'); p.classList.remove('flash'); void p.offsetWidth; p.classList.add('flash');
@@ -2876,6 +2879,9 @@ const Sheets = {
   out: { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [], cardStatus: [] },
   stamp: { car: 0, expenses: 0 },
   status: 'off', message: 'Not connected', busy: false, applying: false, timer: null, poll: null,
+  // Journal, courses, tasks… live in the brain blob rather than in sheet rows, so
+  // queued row-writes alone cannot tell us whether there is anything to upload.
+  brainDirty: false,
 
   /* ---------- persistence ---------- */
   load() {
@@ -2899,18 +2905,30 @@ const Sheets = {
   async call(action, body = {}, method = 'POST') {
     if (!this.cfg.url) throw new Error('No Web App URL set');
     let res;
+    // fetch() rejects with a bare "Failed to fetch" for offline, DNS, blocked
+    // requests and a deployment that answers with a sign-in redirect — on a
+    // phone that is useless, so say what to check.
+    const reach = err => new Error(
+      /failed to fetch|load failed|networkerror/i.test(err.message || '')
+        ? (navigator.onLine
+            ? 'Could not reach your script. Check the Web App URL, and that its deployment is set to "Anyone".'
+            : 'No internet connection — this will sync when you are back online.')
+        : err.message);
     if (method === 'GET') {
       const u = new URL(this.cfg.url);
       u.searchParams.set('action', action);
       u.searchParams.set('secret', this.cfg.secret);
-      res = await fetch(u.toString(), { method: 'GET', redirect: 'follow' });
+      try { res = await fetch(u.toString(), { method: 'GET', redirect: 'follow' }); }
+      catch (err) { throw reach(err); }
     } else {
-      res = await fetch(this.cfg.url, {
-        method: 'POST',
-        redirect: 'follow',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action, secret: this.cfg.secret, ...body })
-      });
+      try {
+        res = await fetch(this.cfg.url, {
+          method: 'POST',
+          redirect: 'follow',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action, secret: this.cfg.secret, ...body })
+        });
+      } catch (err) { throw reach(err); }
     }
     if (!res.ok) throw new Error('Google returned ' + res.status + (res.status === 401 ? ' — check the deployment is set to "Anyone"' : ''));
     let out;
@@ -2949,6 +2967,7 @@ const Sheets = {
   },
 
   queue(soon) {
+    if (!this.applying) this.brainDirty = true;
     if (!this.connected() || !this.cfg.auto) { this.paint(); return; }
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.sync('auto'), soon ? 1200 : 4000);
@@ -2958,7 +2977,7 @@ const Sheets = {
   /* ---------- the sync cycle ---------- */
   async sync(mode = 'manual') {
     if (!this.connected()) { if (mode === 'manual') toast('Add your Web App URL first', { tone: 'error' }); return; }
-    if (this.busy) return;
+    if (this.busy) { this.queue(true); return; }   // come back once the current one lands
     if (!navigator.onLine) {
       this.status = 'error'; this.message = 'Offline — queued changes will go up when you reconnect';
       this.paint();
@@ -2969,7 +2988,7 @@ const Sheets = {
     this.status = 'syncing'; this.message = 'Syncing with Google Sheets…';
     this.paint();
     try {
-      const hasWrites = this.pendingCount() > 0;
+      const hasWrites = this.pendingCount() > 0 || this.brainDirty;
       const brain = typeof DB !== 'undefined' ? DB : null;
       let out;
 
@@ -2979,8 +2998,10 @@ const Sheets = {
         // flight is kept for the next push instead of being wiped when it returns.
         const sent = this.out;
         this.out = { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [], cardStatus: [] };
+        const sentBrain = brain ? canonDB(brain) : '';
         try {
           out = await this.call('push', { data: { ...sent, brain } });
+          if (sentBrain && canonDB(DB) === sentBrain) this.brainDirty = false;   // untouched while in flight
         } catch (err) {
           Object.keys(sent).forEach(k => { this.out[k] = [...(sent[k] || []), ...(this.out[k] || [])]; });
           this.saveCache();
@@ -3011,6 +3032,8 @@ const Sheets = {
       if (d.brain && typeof mergeDB === 'function') {
         const remote = normalizeDB(d.brain);
         const merged = mergeDB(DB, remote);
+        // our copy held something the cloud did not: make sure it goes back up
+        if (canonDB(merged) !== canonDB(remote)) this.brainDirty = true;
         if (canonDB(merged) !== canonDB(DB)) {
           this.applying = true;
           DB = merged;
@@ -3026,7 +3049,7 @@ const Sheets = {
       if (sheetChanged || brainChanged) { try { render(); } catch (e) { /* view not ready */ } }
       if (mode === 'manual') toast('Google Sheets synced');
       else if (sheetChanged && mode !== 'startup') toast('Updated from Google Sheets');
-      if (this.pendingCount()) this.queue(true);   // changes made while that request was in flight
+      if (this.pendingCount() || this.brainDirty) this.queue(true);   // anything changed while that request was in flight
     } catch (err) {
       this.status = 'error';
       this.message = err.message || 'Sync failed';
@@ -3034,6 +3057,8 @@ const Sheets = {
     } finally {
       this.busy = false;
       this.paint();
+      // a cycle skipped while this one was running, or anything left over, tries again
+      if (this.pendingCount() || this.brainDirty) this.queue(true);
     }
   },
 
@@ -3094,6 +3119,7 @@ const Sheets = {
             <button class="btn btn-primary" id="shSave">${icon('check', 15)} Save &amp; test</button>
             ${on ? `<button class="btn btn-ghost" id="shSync">${icon('sparkle', 15)} Sync now</button>
             <button class="btn btn-ghost" id="shCode">${icon('upload', 15)} Copy setup code</button>
+            <button class="btn btn-ghost" id="shLink">${icon('sparkle', 15)} Copy phone setup link</button>
             <button class="btn btn-danger" id="shOff">${icon('x', 15)} Disconnect</button>` : ''}
           </div>
         </div>
@@ -3130,6 +3156,7 @@ const Sheets = {
     };
     if (on) {
       m.querySelector('#shSync').onclick = () => this.sync('manual');
+      m.querySelector('#shLink').onclick = () => copySetupLink();
       m.querySelector('#shCode').onclick = async () => {
         const code = btoa(JSON.stringify({ u: this.cfg.url, s: this.cfg.secret }));
         try { await navigator.clipboard.writeText(code); toast('Setup code copied'); }
@@ -3480,6 +3507,125 @@ const Notify = {
     }
   }
 };
+
+
+/* =========================================================
+   DEMO DATA
+   A new device starts empty. This finds anything that came from the built-in
+   sample set and removes it *with tombstones*, so it disappears from the other
+   devices too instead of syncing straight back.
+   ========================================================= */
+/** How to recognise one item of each kind, built from the sample set itself. */
+const DEMO_KEYS = {
+  projects: p => p.name,
+  tasks: t => t.title,
+  journal: j => j.title,
+  courses: c => c.name,
+  notes: n => n.title,
+  budgets: b => b.category,
+  goals: g => g.name,
+  habits: h => h.name,
+  transactions: x => `${x.description}|${x.amount}|${x.type}`,
+  study: s => `${s.subject}|${s.topic}|${s.minutes}|${s.kind}`,
+  workouts: w => `${w.type}|${w.focus}|${w.minutes}|${w.intensity}`
+};
+
+/** Everything in the current data that matches the sample set. */
+function findDemoData() {
+  const sample = seedDB();
+  const found = {};
+  const ids = [];
+  Object.keys(DEMO_KEYS).forEach(coll => {
+    const key = DEMO_KEYS[coll];
+    const known = new Set((sample[coll] || []).map(key));
+    const hits = (DB[coll] || []).filter(x => known.has(key(x)));
+    if (hits.length) { found[coll] = hits.length; hits.forEach(x => ids.push(x.id)); }
+  });
+  // habit logs belong to whichever habit they tick, so they go with it
+  const demoHabitIds = new Set((DB.habits || []).filter(h => new Set((sample.habits || []).map(x => x.name)).has(h.name)).map(h => h.id));
+  const logs = (DB.habitLogs || []).filter(l => demoHabitIds.has(l.habitId));
+  if (logs.length) { found.habitLogs = logs.length; logs.forEach(l => ids.push(l.id)); }
+  return { found, ids, total: ids.length };
+}
+
+/** Removes them here and leaves tombstones so every device drops them too. */
+function eraseDemoData() {
+  const { found, ids, total } = findDemoData();
+  if (!total) { toast('No sample data left to remove'); return 0; }
+  const gone = new Set(ids);
+  const now = Date.now();
+  Object.keys(DEMO_KEYS).concat('habitLogs').forEach(coll => {
+    if (Array.isArray(DB[coll])) DB[coll] = DB[coll].filter(x => !gone.has(x.id));
+  });
+  DB.trash = (DB.trash || []).filter(t => !gone.has(t.id)).concat(ids.map(id => ({ id, ts: now })));
+  DB.settings.ts = now;
+  saveDB();
+  if (typeof Sheets !== 'undefined' && Sheets.connected()) Sheets.sync('manual');
+  if (typeof Sync !== 'undefined' && Sync.connected()) Sync.run('manual');
+  render();
+  toast(`Removed ${plural(total, 'sample item')} — the other devices will drop them on their next sync`);
+  return total;
+}
+
+const demoSummary = () => {
+  const { found, total } = findDemoData();
+  if (!total) return 'None found — your data is all your own.';
+  return Object.keys(found).map(k => `${found[k]} ${k}`).join(' · ');
+};
+
+/* =========================================================
+   SETUP LINK — connect another device without retyping anything
+   A link carrying the sync settings in its hash; opening it on the phone
+   applies them and cleans the address bar.
+   ========================================================= */
+function setupLink(base) {
+  const payload = { s: { u: Sheets.cfg.url, k: Sheets.cfg.secret } };
+  if (typeof Sync !== 'undefined' && Sync.cfg && Sync.cfg.token) payload.g = { t: Sync.cfg.token, i: Sync.cfg.gistId };
+  const here = location.origin + location.pathname.replace(/\/[^/]*$/, '/');
+  const root = base || (location.protocol === 'file:' ? 'https://yahianassef.github.io/second-brain/' : here);
+  return root + 'm.html#sb=' + btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+}
+/** Applies a #sb= hash on load, then strips it so the secret leaves the URL bar. */
+function applySetupHash() {
+  const m = location.hash.match(/[#&]sb=([^&]+)/);
+  if (!m) return false;
+  try {
+    const p = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    if (p.s && p.s.u) {
+      Sheets.load();
+      Sheets.cfg.url = p.s.u; Sheets.cfg.secret = p.s.k || ''; Sheets.cfg.auto = true;
+      Sheets.save();
+    }
+    if (p.g && p.g.t && typeof Sync !== 'undefined') {
+      Sync.load();
+      Sync.cfg.token = p.g.t; Sync.cfg.gistId = p.g.i || ''; Sync.cfg.auto = true;
+      Sync.save();
+    }
+    history.replaceState(null, '', location.pathname + location.search);
+    setTimeout(() => {
+      toast('Sync settings received — connecting');
+      if (Sheets.connected()) { Sheets.init(); Sheets.sync('manual'); }
+      if (typeof Sync !== 'undefined' && Sync.connected()) Sync.init();
+    }, 400);
+    return true;
+  } catch (e) {
+    history.replaceState(null, '', location.pathname + location.search);
+    return false;
+  }
+}
+async function copySetupLink() {
+  if (!Sheets.connected()) { toast('Connect this device to Google Sheets first', { tone: 'error' }); return; }
+  const link = setupLink();
+  try {
+    await navigator.clipboard.writeText(link);
+    toast('Setup link copied — send it to your phone and open it there');
+  } catch (e) {
+    openModal(`<div class="modal-head"><h3>Setup link</h3><button class="icon-btn" data-close>${icon('x')}</button></div>
+      <div class="modal-body"><p class="hint">Open this on your phone — it carries your sync settings, so nothing needs typing. It contains your secret, so send it to yourself only.</p>
+      <textarea class="input" rows="4" readonly style="margin-top:10px">${esc(link)}</textarea></div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-close>Close</button></div>`);
+  }
+}
 
 const usingSheets = () => Sheets.connected() && (Sheets.data.expenses || []).length > 0;
 /** Currency the finance figures are shown in (the sheets hold AED and EGP). */
@@ -4384,7 +4530,11 @@ function openSettings() {
       </div>
       <div class="set-section"><h4>Data</h4>
         <p>Load the sample data to explore, or start with a clean slate.</p>
-        <div class="btn-row"><button class="btn btn-ghost" id="loadDemo">${icon('sparkle', 15)} Load demo data</button><button class="btn btn-danger" id="eraseAll">${icon('trash', 15)} Erase all data</button></div>
+        <div class="btn-row"><button class="btn btn-danger" id="eraseAll">${icon('trash', 15)} Erase all data</button></div>
+      </div>
+      <div class="set-section"><h4>Sample data</h4>
+        <p id="demoSummary">${esc(demoSummary())}</p>
+        <div class="btn-row"><button class="btn btn-danger" id="killDemo">${icon('trash', 15)} Remove sample data everywhere</button></div>
       </div>
       <div class="set-section"><h4>Notifications</h4>
         <p>Reminders on your phone for expenses, journalling, tasks, projects, courses and more — sent by your Apps Script on a schedule, so they arrive with the app closed.</p>
@@ -4442,9 +4592,9 @@ function openSettings() {
   $('#openSync', m).onclick = () => Sync.openPanel();
   $('#openSheets', m).onclick = () => Sheets.openPanel();
   $('#openNotify', m).onclick = () => Notify.openPanel();
-  $('#loadDemo', m).onclick = () => confirmDialog('Load demo data?', 'Your current data will be replaced with sample projects, tasks, finances and more. Export a backup first if you want to keep it.', 'Load demo data', () => {
-    const keep = DB.settings; DB = seedDB(); DB.settings = keep; saveDB(); render(); toast('Demo data loaded');
-  });
+  $('#killDemo', m).onclick = () => confirmDialog('Remove the sample data?',
+    `This clears everything that came with the app — <b>${esc(demoSummary())}</b> — from this device and, through sync, from your others. Anything you created yourself stays.`,
+    'Remove it everywhere', () => { eraseDemoData(); closeModal(); });
   $('#eraseAll', m).onclick = () => confirmDialog('Erase all data?', 'Every project, task, transaction, journal entry, habit, study session, workout, course and note will be permanently removed from this browser. <b>This cannot be undone.</b>', 'Erase everything', () => {
     const keep = DB.settings; DB = emptyDB(); DB.settings = keep; UI.journalSel = null; UI.habitSel = 'all'; saveDB(); render(); toast('All data erased');
   });
@@ -4502,6 +4652,7 @@ function hydrateStaticIcons() {
 }
 
 (function boot() {
+  try { applySetupHash(); } catch (e) { /* a malformed link must not stop the app */ }
   DB = loadDB();
   try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { toast('Browser storage is unavailable — changes will not persist', { tone: 'error' }); }
   try { const v = localStorage.getItem('secondBrain.view'); if (VIEWS[v]) UI.view = v; } catch (e) { /* ignore */ }
