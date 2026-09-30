@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>cloud.js — accounts and per-user sync</title>
+<style>body{background:#0b0e14;color:#e8ecf3;font:13.5px/1.7 ui-monospace,Consolas,monospace;padding:22px;white-space:pre}</style>
+<pre id="out">running…</pre>
+<script src="mock-supabase.js"></script>
+<script>
+/* the app globals cloud.js expects */
+
+const STORE_KEY = 'secondBrain.data.v1';
+const emptyDB = () => ({ settings: {}, projects: [], tasks: [], transactions: [], budgets: [], goals: [],
+  journal: [], courses: [], notes: [], habits: [], habitLogs: [], study: [], workouts: [], trash: [] });
+let DB = emptyDB();
+const toasts = [];
+const toast = (m) => toasts.push(m);
+const render = () => {};
+window.SB_CLOUD_CONFIG = { url: 'https://mock.supabase.co', anonKey: 'anon-key-123' };
+
+const R = [];
+const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> ' + x : ''));
+</script>
+<script src="../cloud.js"></script>
+<script>
+(async () => {
+  Cloud.load();
+  ok('cloud mode is on when a config is present', Cloud.enabled() === true);
+
+  /* ---- accounts ---- */
+  let threw = '';
+  try { await Cloud.signUp('me@example.com', '123'); } catch (e) { threw = e.message; }
+  ok('a short password is refused in plain words', /at least 6/.test(threw), threw);
+
+  await Cloud.signUp('me@example.com', 'hunter2');
+  ok('signing up starts a session', Cloud.signedIn() && Cloud.user().email === 'me@example.com');
+  ok('the session survives a reload', (() => { Cloud.session = null; Cloud.load(); return Cloud.signedIn(); })());
+
+  threw = '';
+  try { await Cloud.signUp('me@example.com', 'hunter2'); } catch (e) { threw = e.message; }
+  ok('signing up twice points at signing in', /already has an account/.test(threw), threw);
+  threw = '';
+  try { await Cloud.signIn('me@example.com', 'wrong'); } catch (e) { threw = e.message; }
+  ok('a wrong password says so without leaking which part', /not right/.test(threw), threw);
+
+  /* ---- first sync: local work goes up ---- */
+  DB.journal = [{ id: 'j1', title: 'First entry', ts: 1000 }];
+  DB.courses = [{ id: 'c1', name: 'A course', lessonsDone: 2, ts: 1000 }];
+  await Cloud.sync('manual');
+  ok('local items reach the server', MockSB.rows.filter(r => !r.deleted).length === 2,
+     MockSB.rows.map(r => r.coll + '/' + r.item_id).join(', '));
+  ok('the sync cursor moved on', !!Cloud.state.cursor);
+
+  /* ---- a second device on the same account ---- */
+  const deviceA = JSON.parse(JSON.stringify(Cloud.state));
+  DB = emptyDB(); Cloud.state = { cursor: '', pushedTs: 0 };
+  await Cloud.sync('manual');
+  ok('a new device gets everything', DB.journal.length === 1 && DB.courses.length === 1,
+     'journal ' + DB.journal.length + ', courses ' + DB.courses.length);
+  const postsBefore = MockSB.calls.filter(c => c.startsWith('POST /rest/v1/items')).length;
+  await Cloud.sync('manual');
+  ok('and does not upload it all straight back',
+     MockSB.calls.filter(c => c.startsWith('POST /rest/v1/items')).length === postsBefore,
+     (MockSB.calls.filter(c => c.startsWith('POST /rest/v1/items')).length - postsBefore) + ' extra upload(s)');
+
+  /* ---- newest edit wins ---- */
+  DB.courses[0].lessonsDone = 9; DB.courses[0].ts = 2000;
+  await Cloud.sync('manual');
+  const serverCourse = MockSB.rows.find(r => r.coll === 'courses');
+  ok('an edit replaces the stored copy', serverCourse.data.lessonsDone === 9, String(serverCourse.data.lessonsDone));
+  DB.courses[0].lessonsDone = 3; DB.courses[0].ts = 500;      // an older edit arriving late
+  Cloud.applyRemote([{ coll: 'courses', item_id: 'c1', ts: 2000, deleted: false, data: { id: 'c1', name: 'A course', lessonsDone: 9, ts: 2000 } }]);
+  ok('an older copy never overwrites a newer one', DB.courses[0].lessonsDone === 9, String(DB.courses[0].lessonsDone));
+
+  /* ---- deletions travel ---- */
+  DB.journal = []; DB.trash = [{ id: 'j1', ts: 3000 }];
+  await Cloud.sync('manual');
+  ok('a deletion is stored as a tombstone', MockSB.rows.some(r => r.deleted && r.item_id === 'j1'));
+  DB = emptyDB(); Cloud.state = { cursor: '', pushedTs: 0 };
+  await Cloud.sync('manual');
+  ok('the deleted item does not come back on a fresh device', DB.journal.length === 0 && DB.courses.length === 1,
+     'journal ' + DB.journal.length + ', courses ' + DB.courses.length);
+
+  /* ---- settings ---- */
+  DB.settings = { name: 'Yahia', currency: 'AED', ts: 4000 };
+  await Cloud.sync('manual');
+  DB = emptyDB(); Cloud.state = { cursor: '', pushedTs: 0, settingsTs: 0 };
+  await Cloud.sync('manual');
+  ok('settings follow the account', DB.settings.name === 'Yahia' && DB.settings.currency === 'AED',
+     JSON.stringify(DB.settings));
+
+  /* ---- expired tokens are refreshed without bothering anyone ---- */
+  MockSB.expireNext = true;
+  await Cloud.signIn('me@example.com', 'hunter2');     // hands back an already-expired token
+  const before = MockSB.calls.length;
+  DB.notes = [{ id: 'n1', title: 'After expiry', ts: 5000 }];
+  await Cloud.sync('manual');
+  ok('an expired session refreshes itself', Cloud.signedIn() && MockSB.rows.some(r => r.item_id === 'n1'),
+     MockSB.calls.slice(before).filter(c => /refresh_token/.test(c)).length + ' refresh call(s)');
+
+  /* ---- one account cannot see another's rows ---- */
+  const mineCount = MockSB.rows.filter(r => r.user_id === MockSB.users['me@example.com'].id).length;
+  await Cloud.signOut();
+  ok('signing out clears the data from this browser', DB.journal.length === 0 && DB.notes.length === 0 && !Cloud.signedIn());
+  await Cloud.signUp('someone.else@example.com', 'hunter2');
+  DB = emptyDB(); Cloud.state = { cursor: '', pushedTs: 0 };
+  await Cloud.sync('manual');
+  ok('a different account starts empty, seeing none of the first account',
+     DB.journal.length === 0 && DB.courses.length === 0 && DB.notes.length === 0,
+     'journal ' + DB.journal.length + ', courses ' + DB.courses.length + ', notes ' + DB.notes.length);
+  DB.journal = [{ id: 'other-1', title: 'Their entry', ts: 6000 }];
+  await Cloud.sync('manual');
+  ok('the first account’s rows are untouched by the second',
+     MockSB.rows.filter(r => r.user_id === MockSB.users['me@example.com'].id).length === mineCount);
+
+  /* ---- delete my data ---- */
+  await Cloud.deleteEverything();
+  ok('delete my data removes only that account’s rows',
+     MockSB.rows.filter(r => r.user_id === MockSB.users['someone.else@example.com'].id).length === 0 &&
+     MockSB.rows.filter(r => r.user_id === MockSB.users['me@example.com'].id).length === mineCount);
+
+  /* ---- offline ---- */
+  const onLine = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+  Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+  await Cloud.sync('manual');
+  ok('offline says so instead of failing silently', /Offline/.test(Cloud.message), Cloud.message);
+  Object.defineProperty(navigator, 'onLine', onLine || { value: true, configurable: true });
+
+  const failed = R.filter(r => r.startsWith('FAIL')).length;
+  document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;
+})().catch(e => { document.getElementById('out').textContent = 'ERROR: ' + (e && e.stack || e); });
+</script>

@@ -4686,5 +4686,10 @@ function hydrateStaticIcons() {
   setInterval(() => { if (today() !== lastDay) { lastDay = today(); if (!$('.overlay')) render(); } }, 60000);
 })();
 </script>
+<!-- Cloud mode: accounts + per-user database. Inert unless cloud-config.js
+     carries real values, which only the public deployment does. -->
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
+<script src="cloud-ui.js"></script>
 </body>
 </html>
