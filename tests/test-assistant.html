@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>assistant — understanding, and what it saves</title>
+<style>body{background:#0b0e14;color:#e8ecf3;font:13.5px/1.7 ui-monospace,Consolas,monospace;padding:22px;white-space:pre}</style>
+<pre id="out">running…</pre>
+<script>
+/* Two halves are tested here.
+
+   1. The SERVER half: the real assist() from apps-script/Code.gs, run in the
+      browser against stand-ins for Apps Script's own globals — so the prompt,
+      the schema, the parsing of Gemini's answer and the scrubbing of what comes
+      back are all exercised without a key and without a network call.
+
+   2. The CLIENT half: the real Assist.apply() from assistant.js, run against a
+      stand-in for the app, checking that each kind of action lands in the right
+      place with the right fields. */
+
+/* ---------- stand-ins for Apps Script ---------- */
+const props = { GEMINI_KEY: 'test-key' };
+const PropertiesService = { getScriptProperties: () => ({ getProperty: k => props[k] || null }) };
+const Utilities = {
+  formatDate(d, tz, fmt) {
+    const p = n => String(n).padStart(2, '0');
+    if (fmt === 'yyyy-MM-dd') return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()];
+  }
+};
+const notifyTZ = () => 'Asia/Dubai';
+
+let sent = null, reply = null, httpCode = 200;
+const UrlFetchApp = {
+  fetch(url, opts) {
+    sent = { url, opts, body: JSON.parse(opts.payload) };
+    const raw = typeof reply === 'string' ? reply : JSON.stringify(reply);
+    return { getResponseCode: () => httpCode, getContentText: () => raw };
+  }
+};
+/** Gemini's answer, in the shape the Interactions API returns it. */
+const geminiSays = obj => ({
+  id: 'v1_test', status: 'completed', object: 'interaction', model: 'gemini-3.8-flash',
+  usage: { total_tokens: 120 },
+  steps: [{ type: 'thought', signature: 'x' },
+          { type: 'model_output', content: [{ type: 'text', text: JSON.stringify(obj) }] }]
+});
+
+/* ---------- stand-ins for the app ---------- */
+const today = () => '2026-09-30';
+let _n = 0;
+const uid = () => 'id' + (++_n);
+const fmtDate = (d, o) => 'Wednesday, Sep 30';
+const baseCur = () => 'AED';
+const currencyChoices = () => [{ v: 'AED' }, { v: 'EGP' }];
+const LISTS = {
+  expenseCats: ['Housing', 'Food', 'Transport', 'Other'],
+  incomeCats: ['Salary', 'Freelance', 'Other Income'],
+  noteCats: ['Ideas', 'Reference', 'Work']
+};
+let DB, saved, rendered, toasts;
+const reset = () => {
+  DB = { settings: {}, projects: [{ id: 'p1', name: 'Home Office Setup' }], tasks: [], transactions: [],
+         journal: [], notes: [], habits: [{ id: 'h1', name: 'Gym' }], habitLogs: [], trash: [] };
+  saved = []; rendered = 0; toasts = [];
+};
+reset();
+const saveDB = () => { saved.push('db'); };
+const render = () => { rendered++; };
+const toast = m => toasts.push(m);
+const closeModal = () => {};
+const openModal = () => document.createElement('div');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const icon = () => '';
+const $ = () => null;
+const ICONS = {};
+function toggleHabit(habitId, date) {
+  DB.habitLogs.unshift({ id: uid(), habitId, date, done: true, ts: Date.now() });
+  saveDB();
+  return true;
+}
+const Sheets = {
+  connected: () => true,
+  rows: [],
+  data: { expenses: [{ method: 'ADCB', category: 'Food' }, { method: 'Cash', category: 'Fuel' }] },
+  addRow(kind, row) { this.rows.push({ kind, row }); return row; },
+  async call(action, body) { this.lastCall = { action, body }; return { ok: true, result: { actions: [], reply: '' } }; }
+};
+
+const R = [];
+const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> ' + x : ''));
+</script>
+<script src="../assistant.js"></script>
+<script>
+/* apps-script/Code.gs is server code; pull in just the assistant half of it. */
+fetch('../apps-script/Code.gs')
+  .then(r => r.text())
+  .then(src => {
+    const from = src.indexOf('var ASSIST_ENDPOINT');
+    if (from < 0) throw new Error('assist section not found in Code.gs');
+    // eslint-disable-next-line no-eval
+    (0, eval)(src.slice(from));
+    run();
+  })
+  .catch(e => { document.getElementById('out').textContent = 'ERROR: ' + (e && e.stack || e); });
+
+function run() {
+  /* ============ the server half ============ */
+  reply = geminiSays({
+    actions: [{ kind: 'expense', title: 'Carrefour', amount: 45, currency: 'aed', category: 'Food',
+                method: 'ADCB', date: '2026-09-30' }],
+    reply: 'Logged 45 AED at Carrefour.'
+  });
+  let out = assist({ text: '45 dirhams at carrefour on groceries', categories: ['Food', 'Other'], methods: ['ADCB'] });
+  ok('a sentence comes back as one expense', out.actions.length === 1 && out.actions[0].kind === 'expense');
+  ok('the amount survives as a number', out.actions[0].amount === 45, typeof out.actions[0].amount);
+  ok('a lowercase currency is normalised', out.actions[0].currency === 'AED', out.actions[0].currency);
+  ok('the key goes in the header, never the URL',
+     sent.opts.headers['x-goog-api-key'] === 'test-key' && !/key=/.test(sent.url), sent.url);
+  ok('the model is asked for JSON in a fixed shape',
+     sent.body.response_format.mime_type === 'application/json' && !!sent.body.response_format.schema.properties.actions);
+  ok('today and the timezone reach the prompt',
+     /2026-09-30/.test(sent.body.input[0].text) && /Asia\/Dubai/.test(sent.body.input[0].text));
+  ok('only names are sent, never amounts or history',
+     !/\b45\b/.test(sent.body.input[0].text) && /ADCB/.test(sent.body.input[0].text));
+
+  // a model that answers with rubbish must not get it past the gate
+  reply = geminiSays({
+    actions: [{ kind: 'expense', amount: 'forty five', date: 'yesterday', priority: 'Urgent', mood: 9 },
+              { kind: 'task', title: '  Renew registration  ', due: '2026-10-03', priority: 'High' },
+              { nonsense: true }],
+    reply: 'ok'
+  });
+  out = assist({ text: 'two things' });
+  ok('a word where a number belongs is dropped', out.actions[0].amount === undefined, String(out.actions[0].amount));
+  ok('a date that is not a date is dropped', out.actions[0].date === undefined, String(out.actions[0].date));
+  ok('an invented priority is dropped', out.actions[0].priority === undefined, String(out.actions[0].priority));
+  ok('a mood outside 1-5 is dropped', out.actions[0].mood === undefined, String(out.actions[0].mood));
+  ok('text is trimmed', out.actions[1].title === 'Renew registration', `"${out.actions[1].title}"`);
+  ok('an action with no kind is discarded', out.actions.length === 2, out.actions.length + ' actions');
+
+  // audio in, transcript out
+  reply = geminiSays({ actions: [{ kind: 'journal', content: 'Good day, finished the report.',
+                                   transcript: 'good day, finished the report' }], reply: 'Saved.' });
+  out = assist({ audio: 'AAAABBBB', mime: 'audio/mp4' });
+  const audioPart = sent.body.input.find(p => p.type === 'audio');
+  ok('a recording is attached as audio, not text', !!audioPart && audioPart.mime_type === 'audio/mp4');
+  ok('what it heard comes back for you to check', out.transcript === 'good day, finished the report', out.transcript);
+
+  // failures say what to do
+  let threw = '';
+  httpCode = 400; reply = { error: { message: 'API key not valid. Please pass a valid API key.' } };
+  try { assist({ text: 'hi' }); } catch (e) { threw = e.message; }
+  ok('a bad key names the property to fix', /GEMINI_KEY/.test(threw), threw);
+  httpCode = 429; reply = { error: { message: 'Resource exhausted' } };
+  threw = ''; try { assist({ text: 'hi' }); } catch (e) { threw = e.message; }
+  ok('rate limiting says to wait', /rate limiting/.test(threw), threw);
+  httpCode = 200;
+  delete props.GEMINI_KEY;
+  threw = ''; try { assist({ text: 'hi' }); } catch (e) { threw = e.message; }
+  ok('no key at all explains where to put one', /Script properties/i.test(threw), threw);
+  props.GEMINI_KEY = 'test-key';
+  threw = ''; try { assist({}); } catch (e) { threw = e.message; }
+  ok('an empty request is refused', /say or type something/i.test(threw), threw);
+
+  /* ============ the client half ============ */
+  reset();
+  Assist.apply({ kind: 'expense', title: 'Carrefour', amount: 45, currency: 'AED', category: 'Food', method: 'ADCB', date: '2026-09-30' });
+  ok('an expense goes to the sheet, not local storage',
+     Sheets.rows.length === 1 && Sheets.rows[0].kind === 'expense' && Sheets.rows[0].row.name === 'Carrefour'
+     && Sheets.rows[0].row.amount === 45 && DB.transactions.length === 0,
+     JSON.stringify(Sheets.rows[0] && Sheets.rows[0].row));
+
+  Assist.apply({ kind: 'task', title: 'Renew registration', priority: 'High', project: 'home office' });
+  ok('a task lands with its project matched loosely',
+     DB.tasks.length === 1 && DB.tasks[0].projectId === 'p1' && DB.tasks[0].status === 'To Do', DB.tasks[0].projectId);
+  ok('a task with no date said gets no due date', DB.tasks[0].due === '', `"${DB.tasks[0].due}"`);
+
+  Assist.apply({ kind: 'journal', content: 'Finished the report.', mood: 5 });
+  ok('a journal entry gets a title on its own', !!DB.journal[0].title && DB.journal[0].mood === 5, DB.journal[0].title);
+
+  Assist.apply({ kind: 'note', content: 'Batch the weekly review into Sunday. It works better that way.' });
+  ok('a note titles itself from the first sentence',
+     DB.notes[0].title === 'Batch the weekly review into Sunday' && DB.notes[0].category === 'Ideas', DB.notes[0].title);
+
+  Assist.apply({ kind: 'income', amount: 800, title: 'Freelance invoice', category: 'Freelance' });
+  ok('income is a local transaction', DB.transactions.length === 1 && DB.transactions[0].type === 'Income');
+  Assist.apply({ kind: 'income', amount: 10, category: 'Nonsense' });
+  ok('an unknown income category falls back', DB.transactions[0].category === 'Other Income', DB.transactions[0].category);
+
+  Assist.apply({ kind: 'habit', habit: 'gym' });
+  ok('a habit is ticked by name, case aside', DB.habitLogs.length === 1 && DB.habitLogs[0].habitId === 'h1');
+  ok('ticking it twice says so rather than untick it',
+     Assist.apply({ kind: 'habit', habit: 'gym' }) === 'Gym was already ticked' && DB.habitLogs.length === 1);
+  threw = ''; try { Assist.apply({ kind: 'habit', habit: 'pilates' }); } catch (e) { threw = e.message; }
+  ok('an unknown habit is refused, not invented', /No habit called/.test(threw), threw);
+
+  Assist.apply({ kind: 'fuel', amount: 180, odometer: 229400 });
+  Assist.apply({ kind: 'service', title: 'Oil and filter', amount: 320, odometer: 229400, date: '2026-09-28' });
+  const fuel = Sheets.rows.find(r => r.kind === 'fuel'), svc = Sheets.rows.find(r => r.kind === 'service');
+  ok('a fill-up uses the car sheet fields', fuel.row.cost === 180 && fuel.row.odometer === 229400 && fuel.row.date === '2026-09-30');
+  ok('a service keeps what was done', svc.row.item === 'Oil and filter' && svc.row.cost === 320 && svc.row.date === '2026-09-28');
+
+  ok('a missing amount is caught before saving',
+     Assist.missing({ kind: 'expense', title: 'Carrefour' }).join() === 'amount',
+     Assist.missing({ kind: 'expense', title: 'Carrefour' }).join());
+  ok('a complete expense has nothing missing', Assist.missing({ kind: 'expense', amount: 5 }).length === 0);
+  ok('an unclear action saves nothing', (() => {
+    const before = Sheets.rows.length + DB.tasks.length;
+    try { Assist.apply({ kind: 'unclear' }); } catch (e) { /* expected */ }
+    return Sheets.rows.length + DB.tasks.length === before;
+  })());
+
+  const failed = R.filter(r => r.startsWith('FAIL')).length;
+  document.getElementById('out').textContent = R.join('\n') + `\n\n${R.length - failed} passed, ${failed} failed`;
+}
+</script>

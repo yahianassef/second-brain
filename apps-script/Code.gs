@@ -123,7 +123,7 @@ function handleInner(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 11 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 12 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -142,6 +142,7 @@ function handleInner(e, body) {
       case 'notifyInstall': return json({ ok: true, result: installNotifications() });
       case 'notifyRemove':  return json({ ok: true, result: removeNotifications() });
       case 'notifyRun':     return json({ ok: true, result: runNotifications() });
+      case 'assist':        return json({ ok: true, result: assist(body) });
       default:              return json({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -1596,4 +1597,211 @@ function removeNotifications() {
 function notifyTriggerStatus() {
   var found = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'runNotifications'; });
   return { installed: found.length > 0, count: found.length, timezone: notifyTZ(), state: notifyState() };
+}
+
+/* ============================================================
+   ASSISTANT — plain language in, a structured action out
+
+   The app sends what you said (typed, or recorded on a phone) and this asks
+   Gemini to turn it into something the app can actually do: log an expense,
+   add a task, write a journal line, tick a habit, record a fill-up.
+
+   The API key lives in Script Properties, never in the app, so it is not
+   exposed by the public repo or by anyone reading the page source:
+
+       Apps Script editor → Project Settings → Script properties
+         GEMINI_KEY   = your key from aistudio.google.com
+         GEMINI_MODEL = (optional) a different model than the default below
+
+   Nothing is written to a sheet here. This only interprets; the app shows you
+   what it understood and you confirm before anything is saved.
+   ============================================================ */
+var ASSIST_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+var ASSIST_MODEL = 'gemini-3.8-flash';
+var ASSIST_MAX_AUDIO = 7 * 1024 * 1024;   // ~7 MB of base64, far more than a spoken sentence
+
+/** The shape Gemini must answer in. One entry per thing you asked for. */
+function assistSchema(ctx) {
+  return {
+    type: 'object',
+    properties: {
+      actions: {
+        type: 'array',
+        description: 'One entry per thing the person asked to record. Empty if they asked for nothing.',
+        items: {
+          type: 'object',
+          properties: {
+            kind: {
+              type: 'string',
+              enum: ['expense', 'income', 'task', 'note', 'journal', 'habit', 'fuel', 'service', 'unclear']
+            },
+            title: { type: 'string', description: 'Task title, note title, merchant name, or service description.' },
+            amount: { type: 'number' },
+            currency: { type: 'string', enum: ctx.currencies },
+            category: { type: 'string' },
+            method: { type: 'string', description: 'How it was paid, if said. One of the known methods.' },
+            date: { type: 'string', description: 'yyyy-MM-dd. Resolve "yesterday", "last Friday" against today.' },
+            due: { type: 'string', description: 'yyyy-MM-dd for a task deadline.' },
+            priority: { type: 'string', enum: ['High', 'Medium', 'Low'] },
+            project: { type: 'string', description: 'Name of an existing project, if one was named.' },
+            habit: { type: 'string', description: 'Name of an existing habit, if one was named.' },
+            content: { type: 'string', description: 'Body text for a note or journal entry, in their own words.' },
+            mood: { type: 'integer', description: '1 rough to 5 great, only if they said how they felt.' },
+            odometer: { type: 'number' },
+            liters: { type: 'number' },
+            transcript: { type: 'string', description: 'What you heard, verbatim. Required for audio.' },
+            missing: {
+              type: 'array',
+              description: 'Fields a person would need to supply before this can be saved.',
+              items: { type: 'string' }
+            }
+          },
+          required: ['kind']
+        }
+      },
+      reply: { type: 'string', description: 'One short sentence confirming what you understood. No pleasantries.' }
+    },
+    required: ['actions', 'reply']
+  };
+}
+
+function assistPrompt(ctx) {
+  return [
+    'You turn everyday speech into records for a personal life-tracking app. Be literal:',
+    'record what was said, invent nothing, and leave a field out rather than guessing it.',
+    '',
+    'Today is ' + ctx.today + ' (' + ctx.weekday + '), timezone ' + ctx.tz + '.',
+    'Default currency ' + ctx.currencies[0] + '. Known currencies: ' + ctx.currencies.join(', ') + '.',
+    'Spending categories: ' + ctx.categories.join(', ') + '.',
+    'Payment methods: ' + (ctx.methods.length ? ctx.methods.join(', ') : 'unknown') + '.',
+    ctx.projects.length ? 'Projects: ' + ctx.projects.join(', ') + '.' : '',
+    ctx.habits.length ? 'Habits: ' + ctx.habits.join(', ') + '.' : '',
+    '',
+    'Rules:',
+    '- Money spent is "expense"; money received is "income". Amounts are numbers only.',
+    '- "dirhams", "dhs", "aed" mean AED. "pounds", "egp", "genieh" mean EGP.',
+    '- A category must come from the list above; if nothing fits, use "Other".',
+    '- A payment method, project or habit must match the known names, or be left out.',
+    '- Dates are yyyy-MM-dd, resolved against today. No date said for spending means today.',
+    '- Something to do later is a "task". A thought to keep is a "note". Reflection on the day is "journal".',
+    '- If you cannot tell what was meant, return one action of kind "unclear" and say why in reply.',
+    '- Several things in one sentence become several actions.'
+  ].filter(String).join('\n');
+}
+
+function assist(body) {
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('GEMINI_KEY');
+  if (!key) {
+    throw new Error('No Gemini key yet. In the Apps Script editor open Project Settings, then Script properties, '
+      + 'and add GEMINI_KEY with a key from aistudio.google.com.');
+  }
+
+  var text = String(body.text || '').trim();
+  var audio = String(body.audio || '');
+  if (!text && !audio) throw new Error('Nothing to work with — say or type something first.');
+  if (audio.length > ASSIST_MAX_AUDIO) throw new Error('That recording is too long. Keep it under about a minute.');
+
+  var tz = notifyTZ();
+  var now = new Date();
+  var ctx = {
+    today: Utilities.formatDate(now, tz, 'yyyy-MM-dd'),
+    weekday: Utilities.formatDate(now, tz, 'EEEE'),
+    tz: tz,
+    currencies: (body.currencies && body.currencies.length) ? body.currencies : ['AED', 'EGP'],
+    categories: body.categories || [],
+    methods: body.methods || [],
+    projects: body.projects || [],
+    habits: body.habits || []
+  };
+
+  var input = [{ type: 'text', text: assistPrompt(ctx) }];
+  if (audio) {
+    input.push({ type: 'text', text: 'Here is what was said. Transcribe it, then record it.' });
+    input.push({ type: 'audio', data: audio, mime_type: String(body.mime || 'audio/mp4') });
+  } else {
+    input.push({ type: 'text', text: 'They wrote: ' + text });
+  }
+
+  var res = UrlFetchApp.fetch(ASSIST_ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-goog-api-key': key },
+    muteHttpExceptions: true,
+    payload: JSON.stringify({
+      model: props.getProperty('GEMINI_MODEL') || ASSIST_MODEL,
+      input: input,
+      response_format: { type: 'text', mime_type: 'application/json', schema: assistSchema(ctx) }
+    })
+  });
+
+  var code = res.getResponseCode();
+  var raw = res.getContentText();
+  if (code !== 200) throw new Error(assistError(code, raw));
+
+  var parsed = JSON.parse(raw);
+  var out = JSON.parse(assistText(parsed) || '{ }');
+  var actions = [];
+  (out.actions || []).forEach(function (a) {
+    var clean = assistClean(a);
+    if (clean) actions.push(clean);
+  });
+  return {
+    actions: actions,
+    reply: String(out.reply || ''),
+    transcript: actions.length && actions[0].transcript ? actions[0].transcript : '',
+    tokens: (parsed.usage && parsed.usage.total_tokens) || 0
+  };
+}
+
+/** The answer text sits in the last model_output step of the interaction. */
+function assistText(parsed) {
+  var steps = (parsed && parsed.steps) || [];
+  var text = '';
+  steps.forEach(function (step) {
+    if (step.type !== 'model_output') return;
+    (step.content || []).forEach(function (part) {
+      if (part.type === 'text' && part.text) text += part.text;
+    });
+  });
+  return text;
+}
+
+function assistError(code, raw) {
+  var msg = '';
+  try {
+    var o = JSON.parse(raw);
+    msg = (o.error && (o.error.message || o.error.status)) || '';
+  } catch (err) {
+    msg = '';
+  }
+  if (code === 400 && /API key not valid/i.test(msg)) return 'That Gemini key was rejected. Check GEMINI_KEY in Script properties.';
+  if (code === 403) return 'Gemini refused the key. Make sure the Generative Language API is enabled for it.';
+  if (code === 429) return 'Gemini is rate limiting — wait a moment and try again.';
+  if (code >= 500) return 'Gemini is having trouble right now. Try again shortly.';
+  return 'Gemini said no (' + code + ')' + (msg ? ': ' + msg : '');
+}
+
+/** Never trust a model with a number or a date: check the shape before it travels. */
+function assistClean(a) {
+  if (!a || !a.kind) return null;
+  var out = { kind: String(a.kind) };
+  ['title', 'currency', 'category', 'method', 'project', 'habit', 'content', 'transcript'].forEach(function (k) {
+    if (a[k]) out[k] = String(a[k]).trim();
+  });
+  ['amount', 'odometer', 'liters'].forEach(function (k) {
+    var n = Number(a[k]);
+    if (isFinite(n) && n > 0) out[k] = n;
+  });
+  ['date', 'due'].forEach(function (k) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(a[k] || ''))) out[k] = String(a[k]);
+  });
+  if (['High', 'Medium', 'Low'].indexOf(a.priority) >= 0) out.priority = a.priority;
+  var mood = Number(a.mood);
+  if (mood >= 1 && mood <= 5) out.mood = Math.round(mood);
+  if (a.missing && a.missing.length) {
+    out.missing = a.missing.map(function (m) { return String(m); });
+  }
+  if (out.currency) out.currency = out.currency.toUpperCase();
+  return out;
 }
