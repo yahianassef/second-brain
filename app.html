@@ -2882,6 +2882,9 @@ const Sheets = {
   // Journal, courses, tasks… live in the brain blob rather than in sheet rows, so
   // queued row-writes alone cannot tell us whether there is anything to upload.
   brainDirty: false,
+  // Until we have pulled once, this device cannot know what the cloud holds, so
+  // an empty device must not push its emptiness over it.
+  seenRemote: false,
 
   /* ---------- persistence ---------- */
   load() {
@@ -2966,6 +2969,11 @@ const Sheets = {
     this.queue(true);
   },
 
+  /** True when this device holds no app data at all (a fresh or cleared browser). */
+  brainIsEmpty() {
+    if (typeof DB === 'undefined' || !DB) return true;
+    return COLLECTIONS.every(c => !(DB[c] || []).length);
+  },
   queue(soon) {
     if (!this.applying) this.brainDirty = true;
     if (!this.connected() || !this.cfg.auto) { this.paint(); return; }
@@ -2989,7 +2997,8 @@ const Sheets = {
     this.paint();
     try {
       const hasWrites = this.pendingCount() > 0 || this.brainDirty;
-      const brain = typeof DB !== 'undefined' ? DB : null;
+      const holdBack = this.brainIsEmpty() && !this.seenRemote;
+      const brain = (typeof DB !== 'undefined' && !holdBack) ? DB : null;   // never overwrite the cloud with nothing
       let out;
 
       if (hasWrites || mode === 'manual' || mode === 'startup') {
@@ -3002,6 +3011,7 @@ const Sheets = {
         try {
           out = await this.call('push', { data: { ...sent, brain } });
           if (sentBrain && canonDB(DB) === sentBrain) this.brainDirty = false;   // untouched while in flight
+          if (holdBack) this.brainDirty = true;                                  // still owed an upload
         } catch (err) {
           Object.keys(sent).forEach(k => { this.out[k] = [...(sent[k] || []), ...(this.out[k] || [])]; });
           this.saveCache();
@@ -3029,6 +3039,7 @@ const Sheets = {
 
       // merge the Second Brain database using the same engine the gist sync uses
       let brainChanged = false;
+      if (d.brain !== undefined) this.seenRemote = true;
       if (d.brain && typeof mergeDB === 'function') {
         const remote = normalizeDB(d.brain);
         const merged = mergeDB(DB, remote);
