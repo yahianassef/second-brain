@@ -1,0 +1,16 @@
+{
+  "name": "Second Brain",
+  "short_name": "Second Brain",
+  "description": "Projects, tasks, habits, finances, journal, courses and notes — yours, on every device.",
+  "start_url": "./m.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07090D",
+  "theme_color": "#07090D",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
