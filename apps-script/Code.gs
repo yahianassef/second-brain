@@ -123,7 +123,7 @@ function handleInner(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 12 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 13 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -136,6 +136,7 @@ function handleInner(e, body) {
       case 'updateRow':     return json({ ok: true, result: updateRow(body) });
       case 'deleteRow':     return json({ ok: true, result: deleteRow(body) });
       case 'setCardPaid':   return json({ ok: true, result: setCardPaid(body) });
+      case 'addCharge':     return json({ ok: true, result: addCharge(body) });
       case 'notifyPreview': return json({ ok: true, result: notifyPreview() });
       case 'notifyTest':    return json({ ok: true, result: notifyTest(body.message) });
       case 'notifyStatus':  return json({ ok: true, result: notifyTriggerStatus() });
@@ -678,6 +679,7 @@ function readCards() {
       currency: t.currency,
       available: creditAvailable(grid),
       statusCol: c.paid >= 0,        // false = no Payment Status column, so it can't be toggled
+      categoryCol: c.category >= 0,  // false = the tab has nowhere to put a category
       debt: Math.round(debt * 100) / 100,
       charges: rows.length,
       unpaid: rows.filter(function (x) { return !x.paid; }).length,
@@ -831,6 +833,27 @@ function readIncome() {
  * inserted in the sheet since the app last synced, the charge is found again by
  * name and amount rather than flipping whatever now sits on that row.
  */
+/**
+ * A new charge on a credit card. It lands on that card's own tab and starts
+ * unpaid, which is the point: a card purchase is money owed, not money spent,
+ * until the bill is actually settled.
+ */
+function addCharge(body) {
+  invalidateTabs();
+  var want = String(body.card || '').trim();
+  var t = cardTabs().filter(function (x) { return x.name === want; })[0];
+  if (!t) throw new Error('No card called "' + want + '" in your Expenses workbook');
+  var rowNum = appendToTab(t, {
+    name: String(body.name || ''),
+    amount: asNumber(body.amount),
+    category: String(body.category || ''),
+    date: body.date ? new Date(body.date) : new Date()
+  });
+  if (t.cols.paid >= 0) t.sheet.getRange(rowNum, t.cols.paid + 1).setValue(body.paid ? 'Paid' : '');
+  invalidateTabs();
+  return { card: t.name, row: rowNum, currency: t.currency, paid: !!body.paid };
+}
+
 function setCardPaid(body) {
   invalidateTabs();
   var t = cardTabs().filter(function (x) { return x.name === body.card; })[0];
@@ -1008,10 +1031,11 @@ function addExpense(row) {
 
 /** Applies a batch of app-side changes. */
 function pushAll(data) {
-  var result = { fuel: 0, service: 0, expenses: 0, edits: 0, deletes: 0, cardStatus: 0, brain: false };
+  var result = { fuel: 0, service: 0, expenses: 0, charges: 0, edits: 0, deletes: 0, cardStatus: 0, brain: false };
   (data.newFuel || []).forEach(function (r) { addFuel(r); result.fuel++; });
   (data.newService || []).forEach(function (r) { addService(r); result.service++; });
   (data.newExpenses || []).forEach(function (r) { addExpense(r); result.expenses++; });
+  (data.newCharges || []).forEach(function (r) { addCharge(r); result.charges++; });
   (data.edits || []).forEach(function (e) { updateRow(e); result.edits++; });
   (data.deletes || []).forEach(function (d) { deleteRow(d); result.deletes++; });
   (data.cardStatus || []).forEach(function (st) { setCardPaid(st); result.cardStatus++; });

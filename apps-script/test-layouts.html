@@ -188,7 +188,7 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
 (async () => {
   const src = await (await fetch('Code.gs?t=' + Date.now(), { cache: 'no-store' })).text();
   const api = new Function('SpreadsheetApp', 'Session', 'Utilities', 'DriveApp', 'ContentService', 'PropertiesService', 'MailApp', 'UrlFetchApp', 'ScriptApp', 'LockService',
-    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable, setCardPaid, writeBrain, readBrain, notifyPreview, notifyDue, notifyTest, notifySend, runNotifications, installNotifications, removeNotifications, notifyTriggerStatus, addExpense, mergeBrain, pushAll };')
+    src + '\n; return { CONFIG, scanTabs, readExpenses, readCards, addExpense, updateRow, deleteRow, pullAll, invalidateTabs, expensesTab, nextTabName, readFuel, readService, addFuel, addService, carSheetFor, creditAvailable, setCardPaid, addCharge, writeBrain, readBrain, notifyPreview, notifyDue, notifyTest, notifySend, runNotifications, installNotifications, removeNotifications, notifyTriggerStatus, addExpense, mergeBrain, pushAll };')
     (SpreadsheetApp, Session, Utilities, DriveApp, ContentService, PropertiesService, MailApp, UrlFetchApp, ScriptApp, LockService);
   api.CONFIG.SECRET = '';
   api.CONFIG.CAR_SHEET_ID = 'car';
@@ -318,6 +318,31 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
   try { api.setCardPaid({ card: 'ADCB Touchpoints Credit Card', row: 3, name: 'Not a real charge', amount: 1, paid: true }); } catch (e) { threw = e.message; }
   ok('an unknown charge is never guessed at', /Could not find/.test(threw), threw);
 
+  // ---- adding a charge to a card ----
+  const beforeRows = tp().rows.length, beforeDebt = tp().debt;
+  const charge = api.addCharge({ card: 'ADCB Touchpoints Credit Card', name: 'Headphones',
+    amount: 320, category: 'Shopping', date: '2026-09-20' });
+  const landed = tp().rows.find(r => r.name === 'Headphones');
+  ok('a charge lands on the card it names', !!landed && landed.card === 'ADCB Touchpoints Credit Card',
+     charge && charge.card);
+  ok('a new charge starts unpaid', landed && landed.paid === false && touch._g[charge.row - 1][4] === '',
+     landed && JSON.stringify(touch._g[charge.row - 1][4]));
+  ok('its amount and date are written', landed.amount === 320 && landed.date === '2026-09-20',
+     JSON.stringify([landed.amount, landed.date]));
+  // these card tabs have "Transaction Status" where a category would go, so there
+  // is nowhere to put one — the app says so rather than dropping it silently
+  ok('a card tab with no Category column reports that', tp().categoryCol === false, String(tp().categoryCol));
+  ok('and nothing is written into the wrong column', touch._g[charge.row - 1][2] === '',
+     JSON.stringify(touch._g[charge.row - 1][2]));
+  ok('it adds to what the card owes', tp().debt === beforeDebt + 320 && tp().rows.length === beforeRows + 1,
+     tp().debt + ' owed, was ' + beforeDebt);
+  ok('and it does not become an expense', !api.readExpenses().some(r => r.name === 'Headphones'));
+  api.setCardPaid({ card: 'ADCB Touchpoints Credit Card', row: charge.row, name: 'Headphones', amount: 320, paid: true });
+  ok('paying it clears it from the debt', tp().debt === beforeDebt, tp().debt + ' owed');
+  threw = '';
+  try { api.addCharge({ card: 'Nothing Like This', name: 'x', amount: 1 }); } catch (e) { threw = e.message; }
+  ok('an unknown card is refused by name', /No card called/.test(threw), threw);
+
   // ---- notifications: rules only fire when they are actually true ----
   const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const TODAY = iso(new Date());
@@ -354,15 +379,26 @@ const ok = (n, c, x = '') => R.push((c ? 'PASS  ' : 'FAIL  ') + n + (x ? '   -> 
   ok('study compares against the weekly target',
      /of your 10h target/.test(say({ study: [{ date: daysAgo(1), hours: 2 }] }, 'study')));
   ok('exercise counts this week', /1 of 4 workouts/.test(say({ workouts: [{ date: daysAgo(2) }] }, 'exercise')));
+  // this month, whenever "this month" happens to be — the fixtures are dated
+  // last year and a budget only ever looks at the current month
+  api.invalidateTabs();
+  const budgetRow = api.addExpense({ name: 'Budget probe', amount: 250, category: 'Food', date: TODAY, currency: 'AED' });
+  api.invalidateTabs();
   ok('budgets warn only past 90%',
      say({ budgets: [{ category: 'Food', limit: 100000 }] }, 'budgets') === '' &&
      /Food/.test(say({ budgets: [{ category: 'Food', limit: 1 }] }, 'budgets')));
+  api.deleteRow({ kind: 'expense', row: budgetRow.row, tab: budgetRow.tab });
+  api.invalidateTabs();
   ok('cards report what is owed', /Touchpoints/.test(say({}, 'cards')));
   ok('the digest always has something to say', say({}, 'digest').length > 10);
 
-  // expense reminder reacts to a row added today
-  ok('expense reminder fires when nothing is logged today', /Nothing logged today/.test(say({}, 'expenses')));
+  // expense reminder reacts to a row added today — starting from a day with
+  // nothing on it, whatever earlier tests left behind
   api.invalidateTabs();
+  api.readExpenses().filter(r => r.date === TODAY)
+     .forEach(r => api.deleteRow({ kind: 'expense', row: r.row, tab: r.tab }));
+  api.invalidateTabs();
+  ok('expense reminder fires when nothing is logged today', /Nothing logged today/.test(say({}, 'expenses')));
   api.addExpense({ name: 'Notify test coffee', amount: 9, date: TODAY, currency: 'AED' });
   api.invalidateTabs();
   ok('expense reminder goes quiet once something is logged', say({}, 'expenses') === '');

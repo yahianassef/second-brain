@@ -733,6 +733,11 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .notify-row .grow b{font-size:14px;font-weight:600}
 .notify-row .hint{font-size:12px}
 .notify-row .toggle{height:auto;min-height:0}
+.charge-note{display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding:13px 15px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
+  font-size:13px;line-height:1.65;color:var(--text-2);cursor:pointer}
+.charge-note input{width:17px;height:17px;flex-shrink:0;margin-top:2px;accent-color:var(--blue)}
+.charge-note b{color:var(--text);font-weight:600}
 .input.sm,.select.sm{padding:6px 10px;font-size:13px;min-height:36px;width:auto;min-width:96px}
 .nf-daily{width:96px;text-align:center}
 </style>
@@ -2934,7 +2939,7 @@ const POLL_MS = 15000;      // change-probe interval while the tab is visible
 const Sheets = {
   cfg: { url: '', secret: '', auto: true, lastSync: 0 },
   data: { fuel: [], service: [], expenses: [], cards: [], income: [], meta: null },
-  out: { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [], cardStatus: [] },
+  out: { newFuel: [], newService: [], newExpenses: [], newCharges: [], edits: [], deletes: [], cardStatus: [] },
   stamp: { car: 0, expenses: 0 },
   status: 'off', message: 'Not connected', busy: false, applying: false, timer: null, poll: null,
   // Journal, courses, tasks… live in the brain blob rather than in sheet rows, so
@@ -2957,7 +2962,7 @@ const Sheets = {
     try { localStorage.setItem(SHEETS_CACHE, JSON.stringify({ data: this.data, out: this.out, stamp: this.stamp })); } catch (e) { /* ignore */ }
   },
   connected() { return !!this.cfg.url; },
-  pendingCount() { return this.out.newFuel.length + this.out.newService.length + this.out.newExpenses.length + this.out.edits.length + this.out.deletes.length + (this.out.cardStatus || []).length; },
+  pendingCount() { return this.out.newFuel.length + this.out.newService.length + this.out.newExpenses.length + (this.out.newCharges || []).length + this.out.edits.length + this.out.deletes.length + (this.out.cardStatus || []).length; },
 
   /* ---------- transport ----------
      GET for reads. POST uses text/plain so the browser treats it as a simple
@@ -3001,11 +3006,22 @@ const Sheets = {
 
   /* ---------- queueing local changes ---------- */
   addRow(kind, row) {
-    const key = { fuel: 'newFuel', service: 'newService', expense: 'newExpenses' }[kind];
+    const key = { fuel: 'newFuel', service: 'newService', expense: 'newExpenses', charge: 'newCharges' }[kind];
     const local = { ...row, id: 'pending-' + uid(), pending: true, source: 'app' };
-    this.out[key].push(row);
-    const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
-    this.data[bucket] = [...(this.data[bucket] || []), local];
+    (this.out[key] || (this.out[key] = [])).push(row);
+    if (kind === 'charge') {
+      // a charge belongs to its card, not to a flat list, and starts unpaid
+      const card = (this.data.cards || []).find(c => c.name === row.card);
+      if (card) {
+        card.rows = [...(card.rows || []), { ...local, paid: false, card: card.name, currency: card.currency }];
+        card.debt = Math.round(sum(card.rows.filter(x => !x.paid), x => num(x.amount)) * 100) / 100;
+        card.unpaid = card.rows.filter(x => !x.paid).length;
+        card.charges = card.rows.length;
+      }
+    } else {
+      const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
+      this.data[bucket] = [...(this.data[bucket] || []), local];
+    }
     this.saveCache();
     this.queue(true);
     return local;
@@ -3064,7 +3080,7 @@ const Sheets = {
         // Take the outbox *before* the request, so anything changed while it is in
         // flight is kept for the next push instead of being wiped when it returns.
         const sent = this.out;
-        this.out = { newFuel: [], newService: [], newExpenses: [], edits: [], deletes: [], cardStatus: [] };
+        this.out = { newFuel: [], newService: [], newExpenses: [], newCharges: [], edits: [], deletes: [], cardStatus: [] };
         const sentBrain = brain ? canonDB(brain) : '';
         try {
           out = await this.call('push', { data: { ...sent, brain } });
@@ -3303,6 +3319,16 @@ const SHEET_FORMS = {
       { k: 'odometer', l: 'Odometer (km)', t: 'number', step: '1', min: 0 }
     ]
   },
+  charge: {
+    noun: 'Card charge', kind: 'charge',
+    fields: [
+      { k: 'card', l: 'Card', t: 'select', o: () => cardList().map(c => c.name), req: true, addOnly: true },
+      { k: 'name', l: 'What was it', t: 'text', req: true, full: true, ph: 'Groceries' },
+      { k: 'amount', l: 'Amount', t: 'number', req: true, step: '0.01', min: 0 },
+      { k: 'category', l: 'Category', t: 'text', ph: 'Essentials' },
+      { k: 'date', l: 'Date', t: 'date', req: true, def: () => today() }
+    ]
+  },
   expense: {
     noun: 'Expense', kind: 'expense',
     fields: [
@@ -3317,7 +3343,7 @@ const SHEET_FORMS = {
 };
 
 /** Add or edit a row that lives in Google Sheets. */
-function openSheetForm(kind, item = null) {
+function openSheetForm(kind, item = null, preset = {}) {
   const base = SHEET_FORMS[kind];
   // "addOnly" fields (currency) make no sense when editing — the row's tab already fixes it
   const cfg = { ...base, fields: base.fields.filter(f => !(f.addOnly && item)) };
@@ -3328,7 +3354,7 @@ function openSheetForm(kind, item = null) {
   }
   const vals = {};
   cfg.fields.forEach(f => {
-    vals[f.k] = item ? item[f.k] : ((typeof f.def === 'function' ? f.def() : f.def) ?? '');
+    vals[f.k] = item ? item[f.k] : (preset[f.k] ?? (typeof f.def === 'function' ? f.def() : f.def) ?? '');
   });
   const canDelete = item && item.row && !item.pending;
   const m = openModal(`
@@ -3714,6 +3740,22 @@ function expenseUniverse() {
       category: r.category || 'Uncategorised', account: r.method || '',
       currency: r.currency || 'AED', type: 'Expense', source: 'sheet'
     }));
+    // A card charge is money owed until the bill is settled. Once it is marked
+    // paid it becomes real spending, and joins the expense figures here rather
+    // than by copying the row into a month tab by hand.
+    if (DB.settings.countPaidCharges !== false) {
+      (Sheets.data.cards || []).forEach(c => (c.rows || []).forEach(r => {
+        if (!r.paid) return;
+        rows.push({
+          id: 'charge-' + c.name + '-' + r.row, row: r.row, pending: r.pending,
+          month: String(r.date || '').slice(0, 7), date: r.date,
+          description: r.name, amount: num(r.amount),
+          category: r.category || 'Uncategorised', account: c.name,
+          currency: r.currency || c.currency || 'AED', type: 'Expense', source: 'card'
+        });
+      }));
+    }
+
     // Your sheets hold expenses only, so income stays app-side and joins the same view.
     const income = (DB.transactions || [])
       .filter(x => x.type === 'Income' && !incomeCoversMonth(String(x.date || '').slice(0, 7)))
@@ -3796,6 +3838,14 @@ function currencyChoices() {
 
 /** Tells you where a row will be written before you press save. */
 function sheetFormHint(kind, item, vals) {
+  if (kind === 'charge') {
+    if (item) return `Saves to row ${item.row || '—'} of <b>${esc(item.card || 'the card tab')}</b>.`;
+    const c = cardList().find(x => x.name === vals.card);
+    const noCat = c && c.categoryCol === false && vals.category
+      ? ' Its tab has no Category column, so that box will not be saved.' : '';
+    return `Added to <b>${esc(vals.card || 'the card')}</b> as an open charge. `
+      + `It joins your expenses once you mark it paid.${noCat}`;
+  }
   if (kind !== 'expense') {
     return item ? `Saves to row ${item.row || '—'} of your sheet.` : 'Appended to the bottom of the table in your sheet.';
   }
@@ -3982,7 +4032,10 @@ function markCardAllPaid(cardName) {
     action: 'Undo', onAction: () => { open.forEach(r => setCardPaid(cardName, r.row, false, true)); Sheets.queue(true); render(); }
   });
 }
-const payPill = (card, r) => `<button class="pay-pill${r.paid ? ' on' : ''}${r.pending ? ' busy' : ''}" data-act="toggleCardPaid" data-card="${esc(card.name)}" data-row="${r.row}"${card.statusCol === false ? ' disabled' : ''} title="${r.paid ? 'Paid — tap to mark unpaid' : 'Unpaid — tap to mark paid'}">${r.paid ? 'Paid' : 'Unpaid'}</button>`;
+const payPill = (card, r) => !r.row
+  // a charge that has not reached the sheet yet has no row to write a status to
+  ? `<button class="pay-pill busy" disabled title="Saving to your sheet…">Saving…</button>`
+  : `<button class="pay-pill${r.paid ? ' on' : ''}${r.pending ? ' busy' : ''}" data-act="toggleCardPaid" data-card="${esc(card.name)}" data-row="${r.row}"${card.statusCol === false ? ' disabled' : ''} title="${r.paid ? 'Paid — tap to mark unpaid' : 'Unpaid — tap to mark paid'}">${r.paid ? 'Paid' : 'Unpaid'}</button>`;
 
 // swipe the focused card left/right on touch screens
 (function () {
@@ -4199,10 +4252,16 @@ function finCards() {
     <button class="icon-btn" data-act="cycleCard" data-val="-1" title="Previous card (←)" aria-label="Previous card">${icon('chevL', 18)}</button>
     <button class="icon-btn" data-act="cycleCard" data-val="1" title="Next card (→)" aria-label="Next card">${icon('chevR', 18)}</button>
     <button class="btn btn-ghost" data-act="sheetSync">${icon('sparkle', 15)} Sync</button>
+    <button class="btn btn-primary" data-act="addCharge"${card ? ` data-card="${esc(card.name)}"` : ''}>${icon('plus', 15)} Add charge</button>
   </div>
   ${cardRail(cards, selected)}
   ${card ? cardDetailDesk(card) : cardsOverviewDesk(cards)}
-  <p class="hint" style="margin-top:14px">Charges on a card tab stay out of your expense totals — the payment you copy into a month tab is what counts as the expense.</p>`;
+  <label class="charge-note">
+    <input type="checkbox" data-act="toggleCountCharges"${DB.settings.countPaidCharges !== false ? ' checked' : ''}>
+    <span><b>A charge counts as spending only once you mark it paid.</b>
+    Open charges stay out of your expense totals, budgets and the dashboard; marking one paid moves it in,
+    dated to the charge. Untick this if your month tabs already record the card bill, so nothing is counted twice.</span>
+  </label>`;
 }
 
 function cardDetailDesk(c) {
@@ -4228,7 +4287,7 @@ function cardDetailDesk(c) {
     </div>` : ''}
     <div class="dash-grid" style="margin-top:0">
       <div class="card span-8 table-card">
-        <div style="padding:16px 18px 0">${cardHead('wallet', esc(c.name), `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${open.length && c.statusCol ? `<button class="btn btn-ghost sm" data-act="markCardAllPaid" data-card="${esc(c.name)}">${icon('check', 14)} Mark all paid</button>` : ''}${segBtns('cardRows', [['all', 'All', all.length], ['open', 'Open', open.length], ['paid', 'Paid', paid.length]])}</div>`)}
+        <div style="padding:16px 18px 0">${cardHead('wallet', esc(c.name), `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-ghost sm" data-act="addCharge" data-card="${esc(c.name)}">${icon('plus', 14)} Add charge</button>${open.length && c.statusCol ? `<button class="btn btn-ghost sm" data-act="markCardAllPaid" data-card="${esc(c.name)}">${icon('check', 14)} Mark all paid</button>` : ''}${segBtns('cardRows', [['all', 'All', all.length], ['open', 'Open', open.length], ['paid', 'Paid', paid.length]])}</div>`)}
           ${c.statusCol === undefined ? `<p class="hint" style="margin:-4px 0 12px">To save Paid / Unpaid to your sheet, update the Apps Script (paste the new Code.gs and deploy a new version).</p>` : c.statusCol === false ? `<p class="hint" style="margin:-4px 0 12px">This tab has no <b>Payment Status</b> column, so charges can't be marked paid. Add that heading to the tab and sync.</p>` : `<p class="hint" style="margin:-4px 0 12px">Tap <b>Unpaid</b> / <b>Paid</b> on a charge to change it — it's written to the Payment Status column in your sheet.</p>`}</div>
         ${rows.length ? `<div class="table-wrap"><table class="tbl">
           <thead><tr><th>Date</th><th>Charge</th><th>Category</th><th class="r">Amount</th><th class="r">Status</th></tr></thead>
@@ -4361,6 +4420,16 @@ const ACTIONS = {
   notifyPanel: () => Notify.openPanel(),
   sheetSync: () => Sheets.sync('manual'),
   sheetAdd: el => openSheetForm(el.dataset.kind),
+  addCharge: el => {
+    if (!cardList().length) { toast('No credit card tabs found in your Expenses sheet', { tone: 'error' }); return; }
+    openSheetForm('charge', null, { card: el.dataset.card || (cardList()[0] || {}).name });
+  },
+  toggleCountCharges: el => {
+    DB.settings.countPaidCharges = !!el.checked;
+    DB.settings.ts = Date.now();
+    saveDB(); render();
+    toast(el.checked ? 'Paid charges now count as spending' : 'Card charges stay out of your expense totals');
+  },
   sheetEdit: el => {
     const kind = el.dataset.kind;
     const bucket = { fuel: 'fuel', service: 'service', expense: 'expenses' }[kind];
