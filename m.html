@@ -74,15 +74,21 @@
   --violet:#8B5CF6; --violet-t:#B69CFF; --violet-rgb:139,92,246;
   --slate:var(--slate); --slate-rgb:124,138,165;
 
-  --radius:14px;
+  --radius:16px;
   --shadow:0 18px 40px -16px rgba(var(--sh-rgb),.75);
-  --font:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
-  --mono:"JetBrains Mono","Cascadia Code","SF Mono",ui-monospace,Consolas,monospace;
+  --font:"Inter","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Consolas,monospace;
   --ease:cubic-bezier(.2,.8,.2,1);
+
+  /* The phone's own measurements. Without these every padding built on them
+     collapses to zero and the content slides under the bars. */
+  --nav-h:62px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
-body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;background:none;border:0}
 a{color:var(--blue-2);text-decoration:none}
@@ -90,8 +96,8 @@ svg{flex-shrink:0}
 [hidden]{display:none!important}
 .mono{font-family:var(--mono)}
 .muted{color:var(--text-3)}
-.hint{font-size:12.5px;color:var(--text-3)}
-.eyebrow{font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--blue-2);font-weight:700}
+.hint{font-size:14px;color:var(--text-3)}
+.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--blue-2);font-weight:700}
 .txt-red{color:var(--red-t)!important}.txt-amber{color:var(--amber-t)!important}.txt-green{color:var(--green-t)!important}.txt-blue{color:var(--blue-2)!important}
 .spacer{flex:1}
 .row{display:flex;align-items:center;gap:10px}
@@ -120,11 +126,11 @@ body.sub .back-btn{display:grid}
 .navbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;grid-template-columns:repeat(5,1fr);
   padding-bottom:var(--safe-b);background:rgba(var(--side1-rgb),.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--border)}
 .navbar button{height:var(--nav-h);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  color:var(--text-3);font-size:10.5px;font-weight:600;position:relative;transition:color .18s}
+  color:var(--text-3);font-size:12px;font-weight:600;position:relative;transition:color .18s}
 .navbar button.on{color:var(--blue-2)}
 .navbar button.on::before{content:'';position:absolute;top:0;width:26px;height:3px;border-radius:0 0 4px 4px;background:var(--blue-2);box-shadow:0 0 12px var(--blue-2)}
 .navbar button:active{transform:scale(.94)}
-.navbar .badge{position:absolute;top:8px;right:calc(50% - 20px);min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--blue);color:#fff;font-size:9.5px;line-height:16px;font-weight:700}
+.navbar .badge{position:absolute;top:8px;right:calc(50% - 20px);min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--blue);color:#fff;font-size:11.5px;line-height:16px;font-weight:700}
 .fab{position:fixed;right:16px;bottom:calc(var(--nav-h) + var(--safe-b) + 16px);z-index:45;width:56px;height:56px;border-radius:19px;
   display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,#2C88FF,var(--acc-deep));
   box-shadow:0 14px 30px -10px rgba(var(--acc-rgb),.85),inset 0 1px 0 rgba(255,255,255,.3);transition:transform .14s var(--ease)}
@@ -137,17 +143,17 @@ body.sub .back-btn{display:grid}
 .card.tap{transition:transform .12s var(--ease),border-color .2s}
 .card.tap:active{transform:scale(.985);border-color:rgba(var(--acc2-rgb),.4)}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
-.card-title{font-size:12.5px;font-weight:700;color:var(--text-2);display:flex;align-items:center;gap:8px;letter-spacing:.02em;text-transform:uppercase}
+.card-title{font-size:14px;font-weight:700;color:var(--text-2);display:flex;align-items:center;gap:8px;letter-spacing:.02em;text-transform:uppercase}
 .card-title svg{color:var(--blue-2)}
-.link-btn{font-size:13px;color:var(--blue-2);font-weight:600;display:inline-flex;align-items:center;gap:4px;padding:6px 2px}
-.section-title{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);font-weight:700;margin:20px 4px 10px;display:flex;align-items:center;gap:8px}
+.link-btn{font-size:14.5px;color:var(--blue-2);font-weight:600;display:inline-flex;align-items:center;gap:4px;padding:6px 2px}
+.section-title{font-size:12.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);font-weight:700;margin:20px 4px 10px;display:flex;align-items:center;gap:8px}
 .section-title .n{font-family:var(--mono);background:var(--surface-2);border-radius:10px;padding:1px 7px;letter-spacing:0}
 .section-title.late{color:var(--red-t)}
 
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:13px;font-weight:600;font-size:14.5px;
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:13px;font-weight:600;font-size:15.5px;
   border:1px solid transparent;transition:transform .12s,background .2s;min-height:44px}
 .btn:active{transform:scale(.96)}
-.btn.sm{padding:8px 12px;font-size:13px;min-height:38px;border-radius:11px}
+.btn.sm{padding:8px 12px;font-size:14.5px;min-height:38px;border-radius:11px}
 .btn-primary{background:linear-gradient(180deg,var(--acc-up),var(--blue));color:#fff;box-shadow:0 8px 20px -10px rgba(var(--acc-rgb),.9),inset 0 1px 0 rgba(255,255,255,.22)}
 .btn-ghost{background:var(--surface-2);border-color:var(--border);color:var(--text-2)}
 .btn-ghost.on{border-color:rgba(var(--acc2-rgb),.5);color:var(--blue-2);background:rgba(var(--acc-rgb),.12)}
@@ -162,11 +168,11 @@ body.sub .back-btn{display:grid}
 .seg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0 8px;margin:0 -14px;padding-left:14px;padding-right:14px}
 .seg::-webkit-scrollbar{display:none}
 .seg button{flex:0 0 auto;padding:9px 15px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border);
-  color:var(--text-3);font-size:13.5px;font-weight:600;transition:all .18s;min-height:40px}
+  color:var(--text-3);font-size:15px;font-weight:600;transition:all .18s;min-height:40px}
 .seg button.on{background:rgba(var(--acc-rgb),.16);border-color:rgba(var(--acc2-rgb),.45);color:var(--text-hi)}
-.seg button .n{font-family:var(--mono);font-size:11px;opacity:.75;margin-left:5px}
+.seg button .n{font-family:var(--mono);font-size:12.5px;opacity:.75;margin-left:5px}
 
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:20px;
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:3px 10px;border-radius:20px;
   background:var(--surface-3);color:var(--text-2);border:1px solid var(--border-2);white-space:nowrap}
 .chip .dot{background:currentColor}
 .chip.blue{background:rgba(var(--accm-rgb),.14);color:var(--acc-t);border-color:rgba(var(--accm-rgb),.3)}
@@ -176,7 +182,7 @@ body.sub .back-btn{display:grid}
 .chip.violet{background:rgba(var(--violet-rgb),.14);color:var(--violet-t);border-color:rgba(var(--violet-rgb),.3)}
 .chip.slate{background:rgba(var(--slate-rgb),.12);color:var(--text-2);border-color:rgba(var(--slate-rgb),.24)}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
-.tag{font-size:11.5px;color:var(--text-3);font-weight:600}
+.tag{font-size:13px;color:var(--text-3);font-weight:600}
 .tag::before{content:'#';color:var(--blue-2);opacity:.75}
 
 .bar{height:7px;background:var(--surface-3);border-radius:10px;overflow:hidden}
@@ -188,28 +194,31 @@ body.sub .back-btn{display:grid}
 
 .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 .stat{background:linear-gradient(180deg,var(--surface),var(--card-2));border:1px solid var(--border);border-radius:var(--radius);padding:14px;overflow:hidden;position:relative}
-.stat .label{font-size:11.5px;color:var(--text-3);font-weight:600;display:flex;align-items:center;gap:7px}
+.stat .label{font-size:13px;color:var(--text-3);font-weight:600;display:flex;align-items:center;gap:7px}
 .stat .label svg{color:var(--blue-2)}
 .stat .value{font-size:25px;font-weight:700;letter-spacing:-.04em;margin:8px 0 2px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stat .sub{font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .sub{font-size:13px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .list > * + *{border-top:1px solid var(--border)}
 .item{display:flex;align-items:center;gap:12px;padding:13px 2px;min-height:56px}
+button.item{width:100%;text-align:left;background:none;border:0;color:inherit;font:inherit}
+button.item:active{opacity:.6}
+.ic-dot{width:30px;height:30px;border-radius:10px;flex-shrink:0}
 .item .grow{flex:1;min-width:0}
-.item .t{font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item .s{font-size:12.5px;color:var(--text-3);display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:3px}
+.item .t{font-weight:600;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .s{font-size:14px;color:var(--text-3);display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:3px}
 .item.done .t{color:var(--text-3);text-decoration:line-through}
 .check{width:26px;height:26px;border-radius:9px;border:2px solid var(--line-strong);display:grid;place-items:center;flex-shrink:0;color:transparent;transition:all .2s}
 .check.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff;animation:pop .3s var(--ease)}
 .date-block{width:46px;height:48px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border);
   display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;line-height:1.1}
-.date-block b{font-size:17px;font-weight:700}
-.date-block span{font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3)}
+.date-block b{font-size:18px;font-weight:700}
+.date-block span{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3)}
 .date-block.late{border-color:rgba(var(--red-rgb),.4);background:rgba(var(--red-rgb),.08)}
 .date-block.late b{color:var(--red-t)}
 .date-block.soon{border-color:rgba(var(--acc2-rgb),.4);background:rgba(var(--acc-rgb),.1)}
 .date-block.soon b{color:var(--blue-2)}
-.when{font-size:12px;font-weight:700;color:var(--text-3);white-space:nowrap}
+.when{font-size:13.5px;font-weight:700;color:var(--text-3);white-space:nowrap}
 .amt{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .amt.Income{color:var(--acc-t3)}
 .tx-ico{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex-shrink:0}
@@ -218,17 +227,17 @@ body.sub .back-btn{display:grid}
 
 .empty{text-align:center;padding:34px 16px;color:var(--text-3)}
 .empty .e-ico{width:52px;height:52px;border-radius:16px;margin:0 auto 12px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue-2)}
-.empty h4{color:var(--text);font-size:15px;margin-bottom:4px;font-weight:700}
-.empty p{font-size:13px;margin-bottom:14px}
+.empty h4{color:var(--text);font-size:16px;margin-bottom:4px;font-weight:700}
+.empty p{font-size:14.5px;margin-bottom:14px}
 .capture{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:4px 4px 4px 14px}
-.capture input{flex:1;background:none;border:0;outline:none;padding:12px 0;min-width:0;font-size:15px}
+.capture input{flex:1;background:none;border:0;outline:none;padding:12px 0;min-width:0;font-size:16px}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.prose{font-size:15px;line-height:1.75;color:var(--prose)}
+.prose{font-size:16px;line-height:1.75;color:var(--prose)}
 .prose p{margin:0 0 12px}
 .prose ul{margin:0 0 12px 18px}
 .prose li{margin-bottom:5px}
 .prose li::marker{color:var(--blue-2)}
-.prose h4{font-size:15px;color:var(--text);margin:14px 0 7px}
+.prose h4{font-size:16px;color:var(--text);margin:14px 0 7px}
 .prose strong{color:var(--text-hi)}
 .prose code{font-family:var(--mono);font-size:.87em;background:var(--surface-3);padding:1px 6px;border-radius:5px;color:var(--acc-t)}
 .clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -238,12 +247,12 @@ body.sub .back-btn{display:grid}
 .heatmap i.today{outline:1px solid var(--blue-2);outline-offset:1px}
 .ring .ring-bg{stroke:var(--surface-3);fill:none}
 .ring .ring-fg{stroke:url(#ringGrad);fill:none;stroke-linecap:round}
-.ring text{fill:var(--text);font-size:15px;font-weight:700;font-family:var(--font)}
+.ring text{fill:var(--text);font-size:16px;font-weight:700;font-family:var(--font)}
 .chart{width:100%;height:auto;display:block}
 .chart .grid{stroke:var(--grid-line);stroke-dasharray:3 4}
-.chart .axis{fill:var(--text-3);font-size:11px;font-family:var(--font)}
+.chart .axis{fill:var(--text-3);font-size:12.5px;font-family:var(--font)}
 .chart .axis.cur{fill:var(--text);font-weight:700}
-.legend{display:flex;gap:12px;font-size:11.5px;color:var(--text-3)}
+.legend{display:flex;gap:12px;font-size:13px;color:var(--text-3)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .more-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -251,8 +260,8 @@ body.sub .back-btn{display:grid}
   padding:18px 16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start;min-height:104px;transition:transform .12s var(--ease)}
 .more-tile:active{transform:scale(.97)}
 .more-tile .ic{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue-2)}
-.more-tile b{font-size:15px}
-.more-tile span{font-size:12px;color:var(--text-3)}
+.more-tile b{font-size:16px}
+.more-tile span{font-size:13.5px;color:var(--text-3)}
 
 /* =========================================================
    4. SHEETS (modals), FORMS, TOASTS — class names match the desktop app
@@ -276,10 +285,10 @@ body.sub .back-btn{display:grid}
 .modal-foot .hint{display:none}
 .form-grid{display:grid;grid-template-columns:1fr;gap:14px}
 .field{display:flex;flex-direction:column;gap:7px;min-width:0}
-.field > label{font-size:12.5px;font-weight:700;color:var(--text-2)}
+.field > label{font-size:14px;font-weight:700;color:var(--text-2)}
 .field .req{color:var(--blue-2)}
 .input,.select{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:13px 14px;
-  outline:none;font-size:16px;transition:border-color .2s,box-shadow .2s;min-height:48px}
+  outline:none;font-size:16.5px;transition:border-color .2s,box-shadow .2s;min-height:48px}
 .input:focus,.select:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(var(--acc-rgb),.18)}
 .input::placeholder{color:var(--text-3)}
 .select{appearance:none;-webkit-appearance:none;padding-right:38px;
@@ -288,11 +297,11 @@ body.sub .back-btn{display:grid}
 textarea.input{resize:vertical;min-height:120px;line-height:1.6}
 .field.invalid .input,.field.invalid .select{border-color:var(--red);box-shadow:0 0 0 4px rgba(var(--red-rgb),.15)}
 .range-wrap{display:flex;align-items:center;gap:14px;height:48px}
-.range-wrap output{font-family:var(--mono);font-size:14px;width:46px;text-align:right;color:var(--blue-2)}
+.range-wrap output{font-family:var(--mono);font-size:15px;width:46px;text-align:right;color:var(--blue-2)}
 input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:8px;border-radius:8px;
   background:linear-gradient(90deg,var(--blue),var(--blue-2)) 0/var(--p,0%) 100% no-repeat,var(--surface-3);outline:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;border:4px solid var(--acc-ring);box-shadow:0 2px 8px rgba(var(--sh-rgb),.5)}
-.toggle{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--text-2);min-height:48px}
+.toggle{display:flex;align-items:center;gap:12px;font-size:15px;color:var(--text-2);min-height:48px}
 .toggle input{position:absolute;opacity:0;pointer-events:none}
 .toggle span{width:46px;height:28px;border-radius:20px;background:var(--surface-3);border:1px solid var(--border-2);position:relative;transition:.2s;flex-shrink:0}
 .toggle span::after{content:'';position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:var(--knob-off);transition:.2s var(--ease)}
@@ -300,12 +309,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;heigh
 .toggle input:checked + span::after{left:20px;background:#fff}
 .mood-pick{display:flex;gap:8px;flex-wrap:wrap}
 .mood-pick button{display:inline-flex;align-items:center;gap:7px;padding:11px 14px;border-radius:12px;border:1px solid var(--border);
-  background:var(--surface-2);color:var(--text-2);font-size:13.5px;min-height:44px}
+  background:var(--surface-2);color:var(--text-2);font-size:15px;min-height:44px}
 .mood-pick button.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 20%,transparent);color:var(--text-hi)}
 .set-section{padding:16px 0 4px;border-top:1px solid var(--border);margin-top:16px}
-.set-section h4{font-size:14px;font-weight:700;margin-bottom:5px}
-.set-section p{font-size:13px;color:var(--text-3);margin-bottom:12px}
-.sync-state{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:13px 15px;font-size:14px;font-weight:600}
+.set-section h4{font-size:15px;font-weight:700;margin-bottom:5px}
+.set-section p{font-size:14.5px;color:var(--text-3);margin-bottom:12px}
+.sync-state{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:13px 15px;font-size:15px;font-weight:600}
 .sync-dot{width:9px;height:9px;border-radius:50%;background:var(--text-3);flex-shrink:0}
 [data-state="idle"] .sync-dot{background:var(--green);box-shadow:0 0 10px rgba(var(--green-rgb),.6)}
 [data-state="syncing"] .sync-dot{background:var(--blue-2);animation:pulse 1.2s infinite}
@@ -314,7 +323,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;heigh
 
 .toasts{position:fixed;left:12px;right:12px;bottom:calc(var(--nav-h) + var(--safe-b) + 14px);z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .toast{pointer-events:auto;display:flex;align-items:center;gap:11px;background:#151B27;border:1px solid var(--border-2);
-  padding:13px 14px;border-radius:14px;box-shadow:0 14px 34px rgba(var(--sh-rgb),.6);font-size:14px;animation:riseIn .3s var(--ease)}
+  padding:13px 14px;border-radius:14px;box-shadow:0 14px 34px rgba(var(--sh-rgb),.6);font-size:15px;animation:riseIn .3s var(--ease)}
 .toast.out{animation:fadeOut .25s ease forwards}
 .toast .t-ico{width:26px;height:26px;border-radius:50%;background:rgba(var(--acc2-rgb),.18);color:var(--blue-2);display:grid;place-items:center;flex-shrink:0}
 .toast.error .t-ico{background:rgba(var(--red-rgb),.18);color:var(--red-t)}
@@ -324,15 +333,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;heigh
 .search-wrap{position:fixed;inset:0;z-index:90;background:var(--bg);display:none;flex-direction:column;padding-top:var(--safe-t)}
 .search-wrap.open{display:flex;animation:fade .2s ease}
 .search-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border)}
-.search-head input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:12px 14px;outline:none;font-size:16px;min-height:48px}
+.search-head input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:12px 14px;outline:none;font-size:16.5px;min-height:48px}
 .search-results{flex:1;overflow-y:auto;padding:8px 14px calc(var(--safe-b) + 20px)}
-.sr-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-3);padding:14px 2px 6px;font-weight:700}
+.sr-group{font-size:12px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-3);padding:14px 2px 6px;font-weight:700}
 .sr-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 10px;border-radius:13px;background:var(--surface);border:1px solid var(--border);margin-bottom:8px}
 .sr-item:active{background:var(--surface-3)}
 .sr-item .sr-ico{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--surface-3);color:var(--blue-2);flex-shrink:0}
 .sr-item > div{min-width:0}
 .sr-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sr-meta{font-size:12.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-meta{font-size:14px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;padding:0 2px}
 
 @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
@@ -367,16 +376,16 @@ mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;
 .cc-tile.on{opacity:1;box-shadow:0 16px 34px -14px rgba(var(--accm-rgb),.7),0 0 0 2px var(--blue-2)}
 .cc-all{background:linear-gradient(135deg,var(--tile-1),var(--pop-2))}
 .cc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;position:relative;z-index:1}
-.cc-name{font-weight:700;font-size:14.5px;line-height:1.25}
+.cc-name{font-weight:700;font-size:15.5px;line-height:1.25}
 .cc-chip{width:32px;height:23px;border-radius:5px;flex-shrink:0;background:linear-gradient(135deg,#F7DD93,#C79F45)}
 .cc-owed{font-size:24px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;position:relative;z-index:1}
-.cc-sub{font-size:12px;opacity:.85;position:relative;z-index:1}
+.cc-sub{font-size:13.5px;opacity:.85;position:relative;z-index:1}
 .cc-detail{animation:ccIn .28s var(--ease)}
 @keyframes ccIn{from{opacity:0;transform:translateY(8px)}}
 .cc-swatch{width:42px;height:28px;border-radius:7px;flex-shrink:0;background:var(--cc)}
 
 /* paid / unpaid toggle on card charges */
-.pay-pill{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 13px;border-radius:20px;font-size:12.5px;font-weight:700;white-space:nowrap;border:1px solid rgba(var(--red-rgb),.38);background:rgba(var(--red-rgb),.12);color:var(--red-t);transition:transform .1s}
+.pay-pill{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 13px;border-radius:20px;font-size:14px;font-weight:700;white-space:nowrap;border:1px solid rgba(var(--red-rgb),.38);background:rgba(var(--red-rgb),.12);color:var(--red-t);transition:transform .1s}
 .pay-pill::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
 .pay-pill.on{border-color:rgba(var(--green-rgb),.38);background:rgba(var(--green-rgb),.13);color:var(--green-t)}
 .pay-pill:active{transform:scale(.92)}
@@ -388,8 +397,8 @@ mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;
 /* ---------- trackers: habits, studying, exercising ---------- */
 .cal{display:flex;flex-direction:column;gap:6px}
 .cal-head,.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
-.cal-head span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);text-align:center;font-weight:600}
-.cal-day{aspect-ratio:1;border-radius:8px;background:var(--surface-3);display:grid;place-items:center;font-family:var(--mono);font-size:11px;color:var(--text-3);border:1px solid transparent}
+.cal-head span{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);text-align:center;font-weight:600}
+.cal-day{aspect-ratio:1;border-radius:8px;background:var(--surface-3);display:grid;place-items:center;font-family:var(--mono);font-size:12.5px;color:var(--text-3);border:1px solid transparent}
 .cal-day.pad{background:transparent}
 .cal-day.lit{color:var(--on-bright);font-weight:700}
 .cal-day.today{border-color:var(--blue-2)}
@@ -399,9 +408,9 @@ mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;
 .cal.mini .cal-grid{gap:2px}
 .cal.mini .cal-day{border-radius:2px;font-size:0}
 .year-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.year-grid h5{font-size:10.5px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.07em}
-.year-grid .m-sub{font-size:10.5px;color:var(--text-3);font-family:var(--mono);margin-top:5px}
-.heat-legend{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3)}
+.year-grid h5{font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.07em}
+.year-grid .m-sub{font-size:12px;color:var(--text-3);font-family:var(--mono);margin-top:5px}
+.heat-legend{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--text-3)}
 .heat-legend i{width:11px;height:11px;border-radius:3px;display:block}
 .week-dots{display:flex;gap:5px}
 .week-dots i{width:16px;height:16px;border-radius:5px;background:var(--surface-3);display:block}
@@ -411,8 +420,8 @@ mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;
 .habit-check.on{background:var(--c,var(--blue-2));border-color:transparent;color:var(--on-bright-2)}
 .habit-check:active{transform:scale(.9)}
 .h-dot{width:9px;height:9px;border-radius:50%;background:var(--c,var(--blue-2));flex-shrink:0}
-.day-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 2px 6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--blue-2);font-weight:600;border-bottom:1px solid var(--border)}
-.day-head b{font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:0;text-transform:none}
+.day-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 2px 6px;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--blue-2);font-weight:600;border-bottom:1px solid var(--border)}
+.day-head b{font-family:var(--mono);font-size:12.5px;color:var(--text-3);letter-spacing:0;text-transform:none}
 .row-gap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
 /* Notifications panel */
@@ -421,10 +430,10 @@ mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;
 .notify-row:hover{background:var(--surface-2)}
 .notify-row.on{border-color:rgba(var(--acc2-rgb),.25);background:rgba(var(--acc-rgb),.06)}
 .notify-row .grow{flex:1;min-width:160px}
-.notify-row .grow b{font-size:14px;font-weight:600}
-.notify-row .hint{font-size:12px}
+.notify-row .grow b{font-size:15px;font-weight:600}
+.notify-row .hint{font-size:13.5px}
 .notify-row .toggle{height:auto;min-height:0}
-.input.sm,.select.sm{padding:6px 10px;font-size:13px;min-height:36px;width:auto;min-width:96px}
+.input.sm,.select.sm{padding:6px 10px;font-size:14.5px;min-height:36px;width:auto;min-width:96px}
 .nf-daily{width:96px;text-align:center}
 </style>
 </head>
@@ -433,7 +442,6 @@ mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;
   <button class="back-btn" id="backBtn" aria-label="Back"><svg data-icon="chevL" data-size="20"></svg></button>
   <h1 id="pageTitle">Dashboard</h1>
   <button class="top-act" id="searchBtn" aria-label="Search"><svg data-icon="search" data-size="19"></svg></button>
-  <button class="top-act" id="syncBtn" data-sync-status aria-label="Sync"><svg data-icon="cloud" data-size="19"></svg><span data-sync-text hidden></span></button>
 </header>
 
 <main class="screen" id="view"></main>
@@ -2587,7 +2595,7 @@ function categoryChart(list) {
   return `<div class="card" style="margin-bottom:16px">
     ${cardHead('pie', `Spending by category · ${esc(rangeLabel())}`, `<span class="hint">${money(total)}</span>`)}
     ${shown.map(([name, , amt], i) => `<div style="margin-bottom:11px">
-      <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px;margin-bottom:6px"><span>${esc(name)}</span><span class="mono hint">${money(amt)} · ${Math.round(amt / total * 100)}%</span></div>
+      <div style="display:flex;justify-content:space-between;gap:10px;font-size:15px;margin-bottom:6px"><span>${esc(name)}</span><span class="mono hint">${money(amt)} · ${Math.round(amt / total * 100)}%</span></div>
       <div class="bar"><i style="width:${Math.max(2, amt / top * 100)}%;background:${CAT_COLORS[i % CAT_COLORS.length]};box-shadow:none"></i></div>
     </div>`).join('')}
   </div>`;
@@ -2749,7 +2757,7 @@ function mTxRows(list) {
   const total = sum(list.filter(x => x.type !== 'Income'), x => x.amount) || 1;
   return byCategory(list).map(([cat, rows, spend]) =>
     `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 2px 6px;border-bottom:1px solid var(--border)">
-      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--blue-2);font-weight:600">${esc(cat)}</span>
+      <span style="font-size:12.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--blue-2);font-weight:600">${esc(cat)}</span>
       <b class="mono hint">${money(spend)} · ${Math.round(spend / total * 100)}%</b>
     </div>` + rows.map(mTxRow).join('')
   ).join('');
@@ -2771,12 +2779,12 @@ function miniChart(endMonth, n = 6) {
   const W = 340, H = 150, pl = 34, pb = 20, pt = 6, cw = (W - pl) / n, bw = Math.min(14, cw / 3.4);
   const y = v => pt + (H - pt - pb) * (1 - v / max);
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Income and expenses, last ${n} months"><defs><linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00B4FF"/><stop offset="1" stop-color="#0066FF"/></linearGradient><linearGradient id="gEx" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5B6B8C"/><stop offset="1" stop-color="#2F3A50"/></linearGradient></defs>`;
-  for (let i = 0; i <= 3; i++) { const v = max * i / 3, yy = y(v).toFixed(1); s += `<line class="grid" x1="${pl}" x2="${W}" y1="${yy}" y2="${yy}"/><text class="axis" x="${pl - 6}" y="${+yy + 4}" text-anchor="end" style="font-size:9px">${compact(v)}</text>`; }
+  for (let i = 0; i <= 3; i++) { const v = max * i / 3, yy = y(v).toFixed(1); s += `<line class="grid" x1="${pl}" x2="${W}" y1="${yy}" y2="${yy}"/><text class="axis" x="${pl - 6}" y="${+yy + 4}" text-anchor="end" style="font-size:11px">${compact(v)}</text>`; }
   data.forEach((d, i) => {
     const cx = pl + cw * i + cw / 2;
     s += `<rect x="${(cx - bw - 1.5).toFixed(1)}" y="${y(d.income).toFixed(1)}" width="${bw}" height="${(H - pb - y(d.income)).toFixed(1)}" rx="3" fill="url(#gIn)"/>
       <rect x="${(cx + 1.5).toFixed(1)}" y="${y(d.expense).toFixed(1)}" width="${bw}" height="${(H - pb - y(d.expense)).toFixed(1)}" rx="3" fill="url(#gEx)"/>
-      <text class="axis${d.m === endMonth ? ' cur' : ''}" x="${cx.toFixed(1)}" y="${H - 6}" text-anchor="middle" style="font-size:9.5px">${monthLabel(d.m)}</text>`;
+      <text class="axis${d.m === endMonth ? ' cur' : ''}" x="${cx.toFixed(1)}" y="${H - 6}" text-anchor="middle" style="font-size:11.5px">${monthLabel(d.m)}</text>`;
   });
   return s + '</svg>';
 }
@@ -2849,18 +2857,18 @@ SCREENS.home = () => {
       const doneN = live.filter(h => idx.has(habitKey(h.id, t))).length;
       const studyMins = sum(DB.study.filter(x => x.date === t), x => x.minutes);
       const exToday = DB.workouts.filter(x => x.date === t);
-      return `${live.length ? `<div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">Habits</span><b class="mono">${doneN}/${live.length}</b></div>
+      return `${live.length ? `<div class="row" style="justify-content:space-between;font-size:14px;margin-bottom:7px"><span class="hint">Habits</span><b class="mono">${doneN}/${live.length}</b></div>
         <div class="bar ${doneN === live.length ? 'green' : ''}" style="margin-bottom:4px"><i style="width:${live.length ? doneN / live.length * 100 : 0}%"></i></div>
         <div class="list">${habitChecklist(live.slice(0, 4), idx, t)}</div>`
         : `<p class="hint" style="margin-bottom:12px">No habits yet — pick one small thing to do daily.</p>`}
       <div class="grid-2" style="margin-top:12px">
         <div class="card tap" style="margin:0" data-act="go" data-val="study">
           <div class="card-title" style="margin-bottom:6px">${icon('bookOpen', 15)}Studying</div>
-          <b style="font-size:17px">${dur(studyMins)}</b><div class="hint">today · ${dur(sum(inWeek(DB.study), x => x.minutes))} this week</div>
+          <b style="font-size:18px">${dur(studyMins)}</b><div class="hint">today · ${dur(sum(inWeek(DB.study), x => x.minutes))} this week</div>
         </div>
         <div class="card tap" style="margin:0" data-act="go" data-val="exercise">
           <div class="card-title" style="margin-bottom:6px">${icon('dumbbell', 15)}Exercising</div>
-          <b style="font-size:17px">${exToday.length ? dur(sum(exToday, x => x.minutes)) : 'Rest'}</b><div class="hint">today · ${plural(inWeek(DB.workouts).length, 'workout')} this week</div>
+          <b style="font-size:18px">${exToday.length ? dur(sum(exToday, x => x.minutes)) : 'Rest'}</b><div class="hint">today · ${plural(inWeek(DB.workouts).length, 'workout')} this week</div>
         </div>
       </div>
       <div class="btn-row" style="margin-top:12px">${addBtn('study', 'Log study', 'btn-ghost sm')}${addBtn('workouts', 'Log workout', 'btn-ghost sm')}</div>`;
@@ -2880,11 +2888,11 @@ SCREENS.home = () => {
   <div class="grid-2">
     <div class="card tap" style="margin:0" ${lastJ ? `data-act="openJournal" data-id="${lastJ.id}"` : 'data-act="add" data-type="journal"'}>
       <div class="card-title" style="margin-bottom:8px">${icon('book', 15)}Journal</div>
-      ${lastJ ? `<div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(lastJ.title)}</div><p class="hint clamp">${esc(String(lastJ.content || '').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Write your first entry</p>'}
+      ${lastJ ? `<div style="font-weight:700;font-size:15px;margin-bottom:4px">${esc(lastJ.title)}</div><p class="hint clamp">${esc(String(lastJ.content || '').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Write your first entry</p>'}
     </div>
     <div class="card tap" style="margin:0" ${note ? `data-act="edit" data-type="notes" data-id="${note.id}"` : 'data-act="add" data-type="notes"'}>
       <div class="card-title" style="margin-bottom:8px">${icon('note', 15)}Notes</div>
-      ${note ? `<div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(note.title)}</div><p class="hint clamp">${esc(String(note.content || '').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Capture an idea</p>'}
+      ${note ? `<div style="font-weight:700;font-size:15px;margin-bottom:4px">${esc(note.title)}</div><p class="hint clamp">${esc(String(note.content || '').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Capture an idea</p>'}
     </div>
   </div>`;
 };
@@ -2929,7 +2937,7 @@ SCREENS.money = () => {
   const head = `
   <div class="card"><div class="row" style="justify-content:space-between">
     <button class="icon-btn" data-act="month" data-val="-1" aria-label="Previous month">${icon('chevL', 20)}</button>
-    <b style="font-size:15px">${monthLabel(m, true)}</b>
+    <b style="font-size:16px">${monthLabel(m, true)}</b>
     <button class="icon-btn" data-act="month" data-val="1" aria-label="Next month">${icon('chevR', 20)}</button>
   </div></div>
   <div class="stat-grid">
@@ -2982,7 +2990,7 @@ SCREENS.money = () => {
     if (!c) {
       const max = Math.max(1, ...cards.map(x => num(x.debt)));
       return head + cardRail(cards, selected) + nav + `<div class="cc-detail">
-        ${cardCurrencies().map(cur => `<div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:15px">Owed · ${esc(cur)}</b>
+        ${cardCurrencies().map(cur => `<div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:16px">Owed · ${esc(cur)}</b>
           <b class="txt-red" style="font-size:18px">${curMoney(cardDebtTotal(cur), cur)}</b></div></div>`).join('')}
         <div class="card"><div class="list">${cards.map(x => `<div class="item" data-act="pickCard" data-val="${esc(x.name)}" style="--cc:${cardGradient(x.name)}">
           <span class="cc-swatch"></span>
@@ -3004,9 +3012,9 @@ SCREENS.money = () => {
         ${statTile('wallet', 'Owed', curMoney(c.debt, c.currency), plural(open.length, 'open charge'), num(c.debt) > 0 ? 'txt-red' : 'txt-green')}
         ${statTile('target', 'Available', c.available !== null && c.available !== undefined ? curMoney(c.available, c.currency) : '—', c.available !== null && c.available !== undefined ? 'per the sheet' : 'not on this tab')}
       </div>
-      ${usage !== null ? `<div class="card"><div class="row" style="justify-content:space-between;font-size:13px;margin-bottom:8px"><span class="hint">Credit in use</span><b class="mono">${Math.round(usage)}%</b></div>
+      ${usage !== null ? `<div class="card"><div class="row" style="justify-content:space-between;font-size:14.5px;margin-bottom:8px"><span class="hint">Credit in use</span><b class="mono">${Math.round(usage)}%</b></div>
         <div class="bar ${usage >= 90 ? 'red' : usage >= 70 ? 'amber' : ''}"><i style="width:${usage}%"></i></div></div>` : ''}
-      ${cats.length ? `<div class="card">${cardHead('pie', 'Open by category')}${cats.map(([k, v]) => `<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between;font-size:13.5px;margin-bottom:6px"><span>${esc(k)}</span><span class="mono hint">${curMoney(v, c.currency)}</span></div><div class="bar"><i style="width:${v / cats[0][1] * 100}%"></i></div></div>`).join('')}</div>` : ''}
+      ${cats.length ? `<div class="card">${cardHead('pie', 'Open by category')}${cats.map(([k, v]) => `<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between;font-size:15px;margin-bottom:6px"><span>${esc(k)}</span><span class="mono hint">${curMoney(v, c.currency)}</span></div><div class="bar"><i style="width:${v / cats[0][1] * 100}%"></i></div></div>`).join('')}</div>` : ''}
       ${seg('cardRows', [['all', 'All', all.length], ['open', 'Open', open.length], ['paid', 'Paid', paid.length]])}
       ${c.statusCol === undefined ? `<p class="hint" style="margin:0 4px 10px">Update the Apps Script to save Paid / Unpaid to your sheet.</p>` : c.statusCol === false ? `<p class="hint" style="margin:0 4px 10px">This tab has no Payment Status column, so charges can't be marked paid.</p>` : `<div class="row" style="justify-content:space-between;margin:0 2px 10px"><span class="hint">Tap a status to change it</span>${open.length ? `<button class="btn btn-ghost sm" data-act="markCardAllPaid" data-card="${esc(c.name)}">${icon('check', 14)} Mark all paid</button>` : ''}</div>`}
       <div class="card"><div class="list">${rows.length ? rows.map(r => `<div class="item${r.paid ? ' paid' : ''}">
@@ -3026,8 +3034,8 @@ SCREENS.money = () => {
       <div class="card">${cardHead('pie', 'All budgets', `<span class="hint">${money(spent)} / ${money(total)}</span>`)}
         <div class="bar lg ${barTone(total ? spent / total * 100 : 0)}"><i style="width:${Math.min(100, total ? spent / total * 100 : 0)}%"></i></div></div>
       ${rows.map(({ b, spent, pct }) => `<div class="card tap" data-act="edit" data-type="budgets" data-id="${b.id}">
-        <div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:15.5px">${esc(b.category)}</b><span class="chip ${pct > 100 ? 'red' : pct >= 85 ? 'amber' : 'blue'}">${Math.round(pct)}%</span></div>
-        <div class="hint" style="margin-bottom:9px"><b style="color:var(--text);font-size:17px">${money(spent)}</b> of ${money(num(b.limit))}</div>
+        <div class="row" style="justify-content:space-between;margin-bottom:10px"><b style="font-size:16.5px">${esc(b.category)}</b><span class="chip ${pct > 100 ? 'red' : pct >= 85 ? 'amber' : 'blue'}">${Math.round(pct)}%</span></div>
+        <div class="hint" style="margin-bottom:9px"><b style="color:var(--text);font-size:18px">${money(spent)}</b> of ${money(num(b.limit))}</div>
         <div class="bar ${barTone(pct)}"><i style="width:${Math.min(100, pct)}%"></i></div>
         <div class="hint" style="margin-top:9px">${num(b.limit) - spent < 0 ? `<span class="txt-red">${money(spent - num(b.limit))} over budget</span>` : money(num(b.limit) - spent) + ' left'}</div>
       </div>`).join('')}`
@@ -3039,8 +3047,8 @@ SCREENS.money = () => {
       return `<div class="card"><div class="row" style="gap:16px">
         ${ring(pct)}
         <div class="grow" data-act="edit" data-type="goals" data-id="${g.id}">
-          <b style="font-size:16px">${esc(g.name)}</b>
-          <div class="hint" style="margin:5px 0"><b style="color:var(--text);font-size:16px">${money(num(g.saved))}</b> of ${money(num(g.target))}</div>
+          <b style="font-size:16.5px">${esc(g.name)}</b>
+          <div class="hint" style="margin:5px 0"><b style="color:var(--text);font-size:16.5px">${money(num(g.saved))}</b> of ${money(num(g.target))}</div>
           <div class="hint">${g.deadline ? fmtDate(g.deadline, { month: 'short', year: 'numeric' }) : 'No date'}${pct >= 100 ? ' · <span class="txt-green">reached</span>' : monthly ? ` · ${money(monthly)}/mo needed` : ''}</div>
         </div></div>
         ${pct < 100 ? `<button class="btn btn-ghost sm" style="width:100%;margin-top:12px" data-act="addFunds" data-id="${g.id}">${icon('plus', 15)} Add funds</button>` : ''}
@@ -3087,8 +3095,8 @@ SCREENS.notes = () => {
   ${list.length ? list.map(n => `<div class="card tap" data-act="edit" data-type="notes" data-id="${n.id}">
     <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
       <button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" aria-label="Pin">${icon('pin', 17)}</button></div>
-    <b style="font-size:16px;letter-spacing:-.01em">${highlight(n.title, q)}</b>
-    <div class="prose clamp" style="margin-top:7px;font-size:14px">${richText(n.content)}</div>
+    <b style="font-size:16.5px;letter-spacing:-.01em">${highlight(n.title, q)}</b>
+    <div class="prose clamp" style="margin-top:7px;font-size:15px">${richText(n.content)}</div>
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${(n.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}<span class="hint" style="margin-left:auto">${ago(n.updated)}</span></div>
   </div>`).join('') : `<div class="card">${emptyState('note', DB.notes.length ? 'No matches' : 'No notes yet', DB.notes.length ? 'Try another category or search.' : 'Capture ideas and references.', addBtn('notes', 'New note'))}</div>`}`;
 };
@@ -3100,6 +3108,21 @@ SCREENS.more = () => {
     ${cardHead('cloud', 'Sync')}
     <div class="sync-state" data-sync-status><span class="sync-dot"></span><b data-sync-text>${esc(Sync.label())}</b></div>
     <p class="hint" style="margin-top:9px">${esc(Sync.connected() ? Sync.message : 'Connect a private GitHub gist to share data with your computer.')}</p>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    ${cardHead('sliders', 'App')}
+    <div class="list">
+      <button class="item tap" data-act="themePanel">
+        <span class="ic-dot" style="background:linear-gradient(135deg,var(--blue),var(--blue-2))"></span>
+        <div class="grow"><div class="t">Theme &amp; colour</div><div class="s">Light, dark and the accent colour</div></div>
+        ${icon('chevR', 16)}
+      </button>
+      <button class="item tap" data-act="appRefresh">
+        <span class="ic-dot" style="background:var(--surface-3);color:var(--text-2);display:grid;place-items:center">${icon('refresh', 14)}</span>
+        <div class="grow"><div class="t">Check for updates</div><div class="s" id="verLine">${esc(typeof AppUpdate === 'undefined' ? 'Checking…' : AppUpdate.label())}</div></div>
+        ${icon('chevR', 16)}
+      </button>
+    </div>
   </div>
   <div class="more-grid">
     ${tile('projects', 'folder', 'Projects', plural(DB.projects.filter(p => p.status === 'Active').length, 'active project'))}
@@ -3130,11 +3153,11 @@ SCREENS.projects = () => {
     const n = daysUntil(p.deadline), late = n !== null && n < 0 && p.status !== 'Completed';
     return `<div class="card tap" data-act="edit" data-type="projects" data-id="${p.id}">
       <div class="row" style="gap:7px;margin-bottom:10px"><span class="chip ${STATUS_TONE[p.status]}"><span class="dot"></span>${p.status}</span><span class="chip">${esc(p.area)}</span></div>
-      <b style="font-size:16.5px;letter-spacing:-.02em">${esc(p.name)}</b>
+      <b style="font-size:17.5px;letter-spacing:-.02em">${esc(p.name)}</b>
       <p class="hint clamp" style="margin:6px 0 12px">${esc(p.description || 'No description')}</p>
-      <div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">Progress</span><b class="mono">${num(p.progress)}%</b></div>
+      <div class="row" style="justify-content:space-between;font-size:14px;margin-bottom:7px"><span class="hint">Progress</span><b class="mono">${num(p.progress)}%</b></div>
       <div class="bar ${p.status === 'Completed' ? 'green' : ''}"><i style="width:${num(p.progress)}%"></i></div>
-      <div class="row" style="gap:14px;margin-top:12px;font-size:12.5px" class="hint">
+      <div class="row" style="gap:14px;margin-top:12px;font-size:14px" class="hint">
         <span class="${late ? 'txt-red' : 'hint'}">${icon('calendar', 13)} ${p.deadline ? relDay(p.deadline) : 'No deadline'}</span>
         <span class="hint">${icon('tasks', 13)} ${done}/${tasks.length}</span>
         ${p.link ? `<a class="link-btn" style="margin-left:auto" href="${esc(safeUrl(p.link))}" target="_blank" rel="noopener" data-act="noop">Open ${icon('ext', 13)}</a>` : ''}
@@ -3152,9 +3175,9 @@ SCREENS.courses = () => {
       <div class="row" style="gap:7px;margin-bottom:10px" data-act="edit" data-type="courses" data-id="${c.id}">
         ${c.platform ? `<span class="chip">${esc(c.platform)}</span>` : ''}<span class="chip ${STATUS_TONE[c.status]}"><span class="dot"></span>${c.status}</span></div>
       <div data-act="edit" data-type="courses" data-id="${c.id}">
-        <b style="font-size:16.5px;letter-spacing:-.02em">${esc(c.name)}</b>
+        <b style="font-size:17.5px;letter-spacing:-.02em">${esc(c.name)}</b>
         ${c.instructor ? `<div class="hint" style="margin-top:3px">with ${esc(c.instructor)}</div>` : ''}
-        <div class="row" style="justify-content:space-between;font-size:12.5px;margin:12px 0 7px"><span class="hint"><b class="mono" style="color:var(--text)">${num(c.lessonsDone)}</b> / ${num(c.lessonsTotal)} lessons</span><b class="mono">${pct}%</b></div>
+        <div class="row" style="justify-content:space-between;font-size:14px;margin:12px 0 7px"><span class="hint"><b class="mono" style="color:var(--text)">${num(c.lessonsDone)}</b> / ${num(c.lessonsTotal)} lessons</span><b class="mono">${pct}%</b></div>
         <div class="bar ${done ? 'green' : ''}"><i style="width:${pct}%"></i></div>
         <div class="hint" style="margin-top:11px">${c.deadline ? (done ? 'Finished ' + fmtDate(c.deadline) : `<span class="${n < 0 ? 'txt-red' : ''}">${relDay(c.deadline)}</span>`) : 'No deadline'}</div>
       </div>
@@ -3190,7 +3213,7 @@ SCREENS.journal = () => {
   </div>
   ${entries.length ? entries.map(j => `<div class="card tap" data-act="openJournal" data-id="${j.id}">
     <div class="row" style="gap:12px">${dateBlock(j.date)}
-      <div class="grow"><b style="font-size:15.5px">${esc(j.title || 'Untitled')}</b><div class="hint clamp" style="margin-top:4px">${esc(String(j.content || '').replace(/[*#]/g, ''))}</div></div>
+      <div class="grow"><b style="font-size:16.5px">${esc(j.title || 'Untitled')}</b><div class="hint clamp" style="margin-top:4px">${esc(String(j.content || '').replace(/[*#]/g, ''))}</div></div>
       ${j.mood ? `<span class="dot" style="background:${MOOD_COLORS[j.mood - 1]};width:10px;height:10px"></span>` : ''}</div>
   </div>`).join('') : `<div class="card">${emptyState('book', 'No entries yet', 'Reflect on today in a few lines.', addBtn('journal', 'Write first entry'))}</div>`}`;
 };
@@ -3321,9 +3344,9 @@ SCREENS.habits = () => {
         ${h.active === false ? '<span class="chip slate">Paused</span>' : ''}
       </div>
       <div data-act="edit" data-type="habits" data-id="${h.id}">
-        <b style="font-size:16.5px;letter-spacing:-.02em">${esc(h.name)}</b>
+        <b style="font-size:17.5px;letter-spacing:-.02em">${esc(h.name)}</b>
         ${h.notes ? `<div class="hint" style="margin-top:4px">${esc(h.notes)}</div>` : ''}
-        <div class="row" style="justify-content:space-between;margin:12px 0 7px;font-size:12.5px">
+        <div class="row" style="justify-content:space-between;margin:12px 0 7px;font-size:14px">
           <span class="hint">${plural(habitStreak(h.id), 'day')} streak · ${habitRate(h.id)}% of the last 30</span><b class="mono">${wkn}/${target}</b></div>
         <div class="bar ${wkn >= target ? 'green' : ''}"><i style="width:${Math.min(100, wkn / target * 100)}%"></i></div>
       </div>
@@ -3352,7 +3375,7 @@ SCREENS.study = () => {
     ${statTile('flame', 'Streak', plural(dayStreak(days), 'day'), `${dur(monthMins)} in ${monthLabel(UI.heatMonth)}`)}
   </div>
   ${goalM ? `<div class="card">${cardHead('target', 'Weekly target', `<span class="hint">Week of ${fmtDate(weekStart())}</span>`)}
-    <div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">${dur(weekMins)} of ${goalH}h</span><b class="mono">${Math.round(pct)}%</b></div>
+    <div class="row" style="justify-content:space-between;font-size:14px;margin-bottom:7px"><span class="hint">${dur(weekMins)} of ${goalH}h</span><b class="mono">${Math.round(pct)}%</b></div>
     <div class="bar ${pct >= 100 ? 'green' : ''}"><i style="width:${pct}%"></i></div>
     <div style="margin-top:14px">${weekDots(days, '#00A8FF')}</div></div>` : ''}
   ${heatCard('calendar', 'Days you studied', mins, {
@@ -3386,7 +3409,7 @@ SCREENS.exercise = () => {
     ${statTile('flame', 'Streak', plural(dayStreak(days), 'day'), `${dur(monthMins)} in ${monthLabel(UI.heatMonth)}`)}
   </div>
   ${goal ? `<div class="card">${cardHead('target', 'This week', `<span class="hint">Week of ${fmtDate(weekStart())}</span>`)}
-    <div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:7px"><span class="hint">${plural(week.length, 'workout')} of ${goal}</span><b class="mono">${Math.round(pct)}%</b></div>
+    <div class="row" style="justify-content:space-between;font-size:14px;margin-bottom:7px"><span class="hint">${plural(week.length, 'workout')} of ${goal}</span><b class="mono">${Math.round(pct)}%</b></div>
     <div class="bar green"><i style="width:${pct}%"></i></div>
     <div style="margin-top:14px">${weekDots(days, '#22C55E')}</div></div>` : ''}
   ${heatCard('calendar', 'Days you worked out', mins, {
@@ -3562,6 +3585,8 @@ function render() {
 
 const ACTIONS = {
   noop() {},
+  themePanel: () => Theme.panel(),
+  appRefresh: () => AppUpdate.refresh(),
   go: el => go(el.dataset.val),
   add: el => openForm(el.dataset.type, null, el.dataset.preset ? JSON.parse(el.dataset.preset) : {}),
   edit: el => { const it = find(el.dataset.type, el.dataset.id); if (it) openForm(el.dataset.type, it); },
@@ -3797,7 +3822,8 @@ function openHit(r) {
     if (t) openForm(t);
   });
   $('#backBtn').addEventListener('click', () => go('more'));
-  $('#syncBtn').addEventListener('click', () => Sync.openPanel());
+  // the sync button moved to the More screen, where its card already lives
+  $('#syncBtn')?.addEventListener('click', () => Sync.openPanel());
   $('#searchBtn').addEventListener('click', () => openSearch(true));
   $('#searchClose').addEventListener('click', () => openSearch(false));
   $('#searchInput').addEventListener('input', renderSearch);
@@ -3835,6 +3861,7 @@ function importBackup(file) {
 <!-- Cloud mode: accounts + per-user database. Inert unless cloud-config.js
      carries real values, which only the public deployment does. -->
 <!-- Assistant: say or type it, your Apps Script turns it into a record. -->
+<script src="update.js"></script>
 <script src="theme.js"></script>
 <script src="assistant.js"></script>
 <script src="cloud-config.js"></script>
