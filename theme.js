@@ -36,9 +36,15 @@ const Theme = {
     root.dataset.accent = this.accent;
     const bar = document.querySelector('meta[name="theme-color"]');
     if (bar) bar.setAttribute('content', this.resolved() === 'light' ? '#F4F6FB' : '#07090D');
+    const named = ACCENTS.find(a => a.k === this.accent);
     document.querySelectorAll('[data-theme-btn]').forEach(b => {
-      b.innerHTML = this.resolved() === 'light' ? this.sun() : this.moon();
-      b.title = `Theme: ${this.mode === 'auto' ? 'follows your device' : this.mode}`;
+      const glyph = this.resolved() === 'light' ? this.sun() : this.moon();
+      // the dot is the current accent, so the button says "colours" at a glance
+      b.innerHTML = b.classList.contains('top-act')
+        ? `${glyph}<i class="th-dot"></i>`
+        : `${glyph}<span>Theme &amp; colour</span><i class="th-dot"></i>`;
+      b.title = `${this.mode === 'auto' ? 'Automatic' : this.resolved() === 'light' ? 'Light' : 'Dark'}`
+        + `, ${named ? named.l.toLowerCase() : this.accent} — tap to change`;
     });
   },
 
@@ -148,38 +154,32 @@ const Theme = {
     const btn = document.createElement('button');
     btn.id = 'themeBtn';
     btn.setAttribute('data-theme-btn', '');
+    btn.title = 'Theme and colours';
     const foot = document.querySelector('.sidebar-foot');
     if (foot) {
       btn.className = 'nav-item th-btn';
-      btn.innerHTML = this.moon();
-      const label = document.createElement('span');
-      label.textContent = 'Theme';
-      btn.appendChild(label);
       foot.insertBefore(btn, foot.firstChild);
-      // a plain click flips; press and hold, or right-click, opens the choices
-      let held = null;
-      btn.addEventListener('click', e => { if (e.shiftKey) this.panel(); else this.flip(); });
-      btn.addEventListener('contextmenu', e => { e.preventDefault(); this.panel(); });
-      btn.addEventListener('pointerdown', () => { held = setTimeout(() => { held = null; this.panel(); }, 550); });
-      ['pointerup', 'pointerleave'].forEach(ev => btn.addEventListener(ev, () => clearTimeout(held)));
     } else {
       btn.className = 'top-act th-btn';
-      btn.setAttribute('aria-label', 'Theme');
-      btn.innerHTML = this.moon();
+      btn.setAttribute('aria-label', 'Theme and colours');
       const anchor = document.getElementById('searchBtn') || document.getElementById('syncBtn');
       if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor);
       else document.querySelector('header')?.appendChild(btn);
-      btn.addEventListener('click', () => this.flip());
-      btn.addEventListener('contextmenu', e => { e.preventDefault(); this.panel(); });
-      let held = null;
-      btn.addEventListener('pointerdown', () => { held = setTimeout(() => { held = null; this.panel(); }, 550); });
-      ['pointerup', 'pointerleave'].forEach(ev => btn.addEventListener(ev, () => clearTimeout(held)));
     }
+    // One plain click, one obvious outcome: the panel with light, dark and the
+    // colours. A hidden press-and-hold is not a button anyone finds.
+    btn.addEventListener('click', () => this.panel());
   },
 
   styles() {
     const css = `
+    .th-btn{position:relative}
     .th-btn svg{flex-shrink:0}
+    .th-btn span{flex:1;text-align:left}
+    .th-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;
+      background:linear-gradient(135deg,var(--blue),var(--blue-2));
+      box-shadow:0 0 0 1px var(--surface),0 2px 6px -2px var(--blue-glow)}
+    .top-act .th-dot{position:absolute;right:5px;bottom:5px;width:8px;height:8px}
     .th-modes .btn{flex-direction:column;align-items:flex-start;gap:1px;padding:9px 13px}
     .th-hint{font-size:10.5px;opacity:.75;font-weight:500}
     .th-swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:9px;margin-top:11px}
