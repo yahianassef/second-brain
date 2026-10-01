@@ -122,6 +122,16 @@ const Theme = {
           <p>Used for buttons, highlights, charts and the progress rings.</p>
           <div class="th-swatches">${ACCENTS.map(swatch).join('')}</div>
         </div>
+        <div class="set-section"><h4>Motion</h4>
+          <p>Drawn in your accent colour, paused when the app is in the background,
+          and switched off entirely if your phone or laptop is set to reduce motion.</p>
+          <label class="th-switch"><input type="checkbox" data-fx="fxAmbient"${(DB.settings || {}).fxAmbient !== false ? ' checked' : ''}>
+            <span><b>Living background</b> — drifting, linked points behind the app</span></label>
+          <label class="th-switch"><input type="checkbox" data-fx="fxCelebrate"${(DB.settings || {}).fxCelebrate !== false ? ' checked' : ''}>
+            <span><b>Celebrate completions</b> — a burst when a task or habit is done</span></label>
+          <label class="th-switch"><input type="checkbox" data-fx="fxCount"${(DB.settings || {}).fxCount !== false ? ' checked' : ''}>
+            <span><b>Counting figures</b> — totals count up instead of jumping</span></label>
+        </div>
         <p class="hint">Your choice is saved with your data, so your other devices pick it up on the next sync.</p>
       </div>
       <div class="modal-foot"><button class="btn btn-ghost" data-close>Done</button></div>`, false, 'small');
@@ -131,6 +141,16 @@ const Theme = {
       m.querySelectorAll('[data-mode]').forEach(x => {
         x.className = 'btn ' + (x.dataset.mode === this.mode ? 'btn-primary' : 'btn-ghost');
       });
+    });
+    m.querySelectorAll('[data-fx]').forEach(box => box.onchange = () => {
+      DB.settings[box.dataset.fx] = box.checked;
+      DB.settings.ts = Date.now();
+      try { saveDB(); } catch (e) { /* storage blocked */ }
+      try { Motion.refresh(); } catch (e) { /* motion.js not loaded */ }
+      if (box.dataset.fx === 'fxCelebrate' && box.checked) {
+        const r = box.getBoundingClientRect();
+        try { Motion.burst(r.left + 10, r.top + 10, 'task'); } catch (e) { /* ignore */ }
+      }
     });
     m.querySelectorAll('[data-accent]').forEach(b => b.onclick = () => {
       this.set(null, b.dataset.accent);
@@ -190,6 +210,10 @@ const Theme = {
     .th-swatch i{width:26px;height:26px;border-radius:50%;background:var(--sw);
       box-shadow:0 4px 12px -5px var(--sw),inset 0 0 0 1px rgba(255,255,255,.18)}
     .th-swatch.on{border-color:var(--sw);color:var(--text);box-shadow:0 0 0 1px var(--sw)}
+    .th-switch{display:flex;gap:10px;align-items:flex-start;margin-top:9px;font-size:13px;
+      line-height:1.6;color:var(--text-2);cursor:pointer}
+    .th-switch input{width:17px;height:17px;flex-shrink:0;margin-top:2px;accent-color:var(--blue)}
+    .th-switch b{color:var(--text);font-weight:600}
     .th-swatch.on i{box-shadow:0 4px 14px -4px var(--sw),inset 0 0 0 2px var(--surface-2),0 0 0 2px var(--sw)}`;
     const s = document.createElement('style');
     s.textContent = css;
