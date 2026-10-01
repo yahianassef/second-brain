@@ -28,6 +28,7 @@ const Graph = {
   view: { x: 0, y: 0, k: 1 },
   drag: null, hover: null, picked: null, linkFrom: null,
   alpha: 1, pointer: { x: 0, y: 0 }, ro: null, settled: false,
+  level: { kind: 'hubs', type: '', focus: '' },        // where you have drilled to
 
   key: (type, id) => type + ':' + id,
   titleOf(type, item) { return String(item[(GRAPH_TYPES[type] || {}).title || 'title'] || item.name || item.title || 'Untitled'); },
@@ -38,7 +39,10 @@ const Graph = {
   },
 
   /* ---------------- what is connected to what ---------------- */
-  build() {
+  /** Every item of every visible type, with the edges between them. The levels
+      above are drawn from this, so a connection means the same thing wherever
+      you are. */
+  buildAll() {
     const hidden = this.hidden();
     const keep = new Map();                        // key -> node
     const old = new Map(this.nodes.map(n => [n.key, n]));
@@ -108,10 +112,109 @@ const Graph = {
     (DB.links || []).forEach(l => l && l.a && l.b && add(l.a, l.b, 'manual'));
 
     edges.forEach(e => { e.a.deg++; e.b.deg++; });
+    return { nodes: [...keep.values()], edges, byKey: keep };
+  },
+
+  /** What to show, given how far you have drilled in. */
+  build() {
+    const all = this.buildAll();
+    const lvl = this.level;
+
+    if (lvl.kind === 'hubs') {
+      // one dot per kind of thing, joined where their items are joined
+      const old = new Map(this.nodes.map(n => [n.key, n]));
+      const hubs = new Map();
+      Object.keys(GRAPH_TYPES).forEach(type => {
+        if (this.hidden().includes(type)) return;
+        const count = all.nodes.filter(n => n.type === type).length;
+        if (!count) return;
+        const key = 'hub:' + type;
+        const was = old.get(key);
+        hubs.set(key, {
+          key, type, hub: true, count,
+          title: GRAPH_TYPES[type].label + ' · ' + count,
+          x: was ? was.x : (Math.random() - 0.5) * 300,
+          y: was ? was.y : (Math.random() - 0.5) * 300,
+          vx: 0, vy: 0, deg: 0
+        });
+      });
+      const seen = new Map();
+      all.edges.forEach(e => {
+        if (e.a.type === e.b.type) return;
+        const a = 'hub:' + e.a.type, b = 'hub:' + e.b.type;
+        if (!hubs.has(a) || !hubs.has(b)) return;
+        const id = a < b ? a + '|' + b : b + '|' + a;
+        const hit = seen.get(id);
+        if (hit) { hit.weight++; return; }
+        const edge = { id, kind: 'hub', weight: 1, a: hubs.get(a), b: hubs.get(b) };
+        seen.set(id, edge);
+      });
+      const edges = [...seen.values()];
+      edges.forEach(e => { e.a.deg += e.weight; e.b.deg += e.weight; });
+      this.nodes = [...hubs.values()];
+      this.edges = edges;
+      this.byKey = hubs;
+      this.alpha = 1;
+      return;
+    }
+
+    if (lvl.kind === 'type') {
+      // everything of one kind, plus whatever each one touches
+      const wanted = new Set(all.nodes.filter(n => n.type === lvl.type).map(n => n.key));
+      all.edges.forEach(e => {
+        if (wanted.has(e.a.key)) wanted.add(e.b.key);
+        else if (wanted.has(e.b.key)) wanted.add(e.a.key);
+      });
+      this.useSubset(all, wanted);
+      return;
+    }
+
+    // one item and the things it touches, plus their links to each other
+    const near = new Set([lvl.focus]);
+    all.edges.forEach(e => {
+      if (e.a.key === lvl.focus) near.add(e.b.key);
+      if (e.b.key === lvl.focus) near.add(e.a.key);
+    });
+    this.useSubset(all, near);
+  },
+
+  useSubset(all, keys) {
+    const keep = new Map();
+    all.nodes.forEach(n => { if (keys.has(n.key)) { n.deg = 0; keep.set(n.key, n); } });
+    const edges = all.edges.filter(e => keep.has(e.a.key) && keep.has(e.b.key));
+    edges.forEach(e => { e.a.deg++; e.b.deg++; });
     this.nodes = [...keep.values()];
     this.edges = edges;
     this.byKey = keep;
     this.alpha = 1;
+  },
+
+  /** Drill in one step, or back out. */
+  drill(node) {
+    if (node.hub) { this.level = { kind: 'type', type: node.type, focus: '' }; }
+    else { this.level = { kind: 'focus', type: node.type, focus: node.key }; }
+    this.picked = node.hub ? null : node;
+    this.settled = false;
+    this.refit();
+  },
+  up() {
+    const lvl = this.level;
+    if (lvl.kind === 'focus') this.level = { kind: 'type', type: lvl.type, focus: '' };
+    else if (lvl.kind === 'type') this.level = { kind: 'hubs', type: '', focus: '' };
+    this.picked = null;
+    this.linkFrom = null;
+    this.settled = false;
+    this.refit();
+  },
+  refit() {
+    this.build();
+    for (let i = 0; i < 160; i++) this.step();
+    this.frameAll();
+    this.alpha = 0.3;
+    this.settled = true;
+    this.paintBar();
+    this.paintTrail();
+    this.draw();
   },
 
   /* ---------------- layout ---------------- */
@@ -160,7 +263,7 @@ const Graph = {
     const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
     return `rgba(${r},${g},${b},${alpha})`;
   },
-  radius(node) { return 5 + Math.min(10, node.deg * 1.5); },
+  radius(node) { return node.hub ? 13 + Math.min(16, Math.sqrt(node.count) * 2.4) : 5 + Math.min(10, node.deg * 1.5); },
 
   toScreen(p) { return { x: (p.x + this.view.x) * this.view.k + this.w / 2, y: (p.y + this.view.y) * this.view.k + this.h / 2 }; },
   toWorld(x, y) { return { x: (x - this.w / 2) / this.view.k - this.view.x, y: (y - this.h / 2) / this.view.k - this.view.y }; },
@@ -344,6 +447,7 @@ const Graph = {
 
   /** A tap either links two things, or opens what you tapped. */
   tap(node) {
+    if (node.hub) { this.drill(node); return; }
     if (this.linkFrom && this.linkFrom !== node) {
       this.connect(this.linkFrom, node);
       this.linkFrom = null;
@@ -351,6 +455,8 @@ const Graph = {
       return;
     }
     if (this.linkFrom === node) { this.linkFrom = null; this.paintBar(); this.draw(); return; }
+    // first tap selects, a second one drills into what it touches
+    if (this.picked === node && this.level.focus !== node.key) { this.drill(node); return; }
     this.picked = this.picked === node ? null : node;
     this.paintBar();
     this.draw();
@@ -389,15 +495,43 @@ const Graph = {
     toast('Link removed');
   },
 
+  paintTrail() {
+    const el = document.getElementById('graphTrail');
+    if (!el) return;
+    const lvl = this.level;
+    const focus = lvl.focus ? this.byKey.get(lvl.focus) : null;
+    const crumbs = [`<button class="g-crumb" data-g="home">Everything</button>`];
+    if (lvl.kind !== 'hubs') {
+      crumbs.push(`<span>${icon('chevR', 13)}</span>`);
+      crumbs.push(lvl.kind === 'type'
+        ? `<b class="g-crumb on">${esc(GRAPH_TYPES[lvl.type].label)}</b>`
+        : `<button class="g-crumb" data-g="type" data-key="${esc(lvl.type)}">${esc(GRAPH_TYPES[lvl.type].label)}</button>`);
+    }
+    if (lvl.kind === 'focus') {
+      crumbs.push(`<span>${icon('chevR', 13)}</span>`);
+      crumbs.push(`<b class="g-crumb on">${esc(focus ? focus.title : 'Selected')}</b>`);
+    }
+    el.innerHTML = crumbs.join('') + (lvl.kind === 'hubs'
+      ? `<span class="g-hint">Tap a circle to open it</span>`
+      : `<button class="btn btn-ghost sm g-up" data-g="up">${icon('chevL', 13)} Back</button>`);
+  },
+
   /* ---------------- the panel beside the map ---------------- */
   paintBar() {
     const bar = document.getElementById('graphSide');
     if (!bar) return;
     const n = this.picked;
     if (!n) {
+      const lvl = this.level;
+      const where = lvl.kind === 'hubs'
+        ? 'Each circle is one kind of thing, sized by how much of it you have. Tap one to open it.'
+        : lvl.kind === 'type'
+          ? `Every ${GRAPH_TYPES[lvl.type].label.toLowerCase().replace(/s$/, '')} you have, with whatever it touches. Tap one, then tap it again to drill into it.`
+          : 'This is one thing and everything it connects to. Tap another to keep going.';
       bar.innerHTML = `<div class="g-empty">${icon('target', 20)}
-        <b>Nothing selected</b>
-        <span>Tap a dot to see what it connects to. Drag to move it, drag the background to pan, scroll or pinch to zoom.</span>
+        <b>${lvl.kind === 'hubs' ? 'Everything you keep' : 'Nothing selected'}</b>
+        <span>${where}</span>
+        <span>Drag to move, drag the background to pan, scroll or pinch to zoom.</span>
         <span class="g-legend">${Object.entries(GRAPH_TYPES).map(([k, v]) =>
           `<i style="background:var(${v.colour})"></i>${v.label}`).join('')}</span></div>`;
       return;
@@ -410,6 +544,7 @@ const Graph = {
         <div><b>${esc(n.title)}</b><span>${GRAPH_TYPES[n.type].label.replace(/s$/, '')}</span></div>
       </div>
       <div class="btn-row">
+        <button class="btn btn-primary sm" data-g="drill">${icon('share', 14)} Drill in</button>
         <button class="btn btn-ghost sm" data-g="open">${icon('edit', 14)} Open</button>
         <button class="btn ${this.linkFrom === n ? 'btn-primary' : 'btn-ghost'} sm" data-g="link">${icon('link', 14)} ${this.linkFrom === n ? 'Pick the other one' : 'Link to…'}</button>
       </div>
@@ -430,6 +565,7 @@ const Graph = {
   html() {
     const hidden = this.hidden();
     return `<div class="g-wrap">
+      <div class="g-trail" id="graphTrail"></div>
       <div class="g-bar">
         ${Object.entries(GRAPH_TYPES).map(([k, v]) =>
           `<button class="g-chip${hidden.includes(k) ? ' off' : ''}" data-g="type" data-key="${k}">
@@ -458,6 +594,7 @@ const Graph = {
     }
     this.wire();            // a fresh canvas each render, so fresh listeners
     this.paintBar();
+    this.paintTrail();
     cancelAnimationFrame(this.raf);
     this.loop();
 
@@ -491,9 +628,19 @@ const Graph = {
       } else if (what === 'link' && this.picked) {
         this.linkFrom = this.linkFrom === this.picked ? null : this.picked;
         this.paintBar(); this.draw();
+      } else if (what === 'home') {
+        this.level = { kind: 'hubs', type: '', focus: '' };
+        this.picked = null; this.linkFrom = null; this.refit();
+      } else if (what === 'type') {
+        this.level = { kind: 'type', type: hit.dataset.key, focus: '' };
+        this.picked = null; this.linkFrom = null; this.refit();
+      } else if (what === 'up') {
+        this.up();
+      } else if (what === 'drill' && this.picked) {
+        this.drill(this.picked);
       } else if (what === 'go') {
         const n = this.byKey.get(hit.dataset.key);
-        if (n) { this.picked = n; this.centreOn(n); this.paintBar(); this.draw(); }
+        if (n) { this.drill(n); }
       } else if (what === 'cut' && this.picked) {
         e.stopPropagation();
         this.unlink(this.picked.key, hit.dataset.key);
@@ -580,6 +727,13 @@ const Graph = {
     const s = document.createElement('style');
     s.textContent = `
     .g-wrap{display:flex;flex-direction:column;gap:10px;height:calc(100vh - 190px);min-height:420px}
+    .g-trail{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-size:13px}
+    .g-crumb{background:none;border:0;padding:0;font:inherit;font-size:13px;color:var(--blue-2);cursor:pointer}
+    .g-crumb:hover{text-decoration:underline}
+    .g-crumb.on{color:var(--text);font-weight:650}
+    .g-trail span{display:inline-flex;color:var(--text-3)}
+    .g-hint{font-size:12px;color:var(--text-3);margin-left:4px}
+    .g-up{margin-left:auto}
     .g-bar{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
     .g-bar .spacer{flex:1}
     .g-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;cursor:pointer;
