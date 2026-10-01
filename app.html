@@ -479,6 +479,13 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6) sepia(1) h
 .masonry{columns:3 270px;column-gap:16px}
 .masonry > .card{break-inside:avoid;margin-bottom:16px;display:block}
 .note-card h4{font-size:15px;font-weight:600;letter-spacing:-.01em;margin:10px 0 4px;line-height:1.35}
+.prose li.chk{list-style:none;margin-left:-18px;display:flex;gap:9px;align-items:flex-start}
+.prose li.chk.done > span{color:var(--text-3);text-decoration:line-through}
+.chk-box{width:18px;height:18px;flex-shrink:0;margin-top:2px;border-radius:6px;border:1.5px solid var(--line-strong);
+  background:none;display:grid;place-items:center;color:transparent;cursor:pointer;padding:0}
+.chk-box.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff}
+.note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px;color:var(--text-3)}
+.note-progress .bar{flex:1;max-width:120px}
 .note-card .prose{font-size:13.5px;line-height:1.65;margin-top:6px;max-height:230px;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 75%,transparent);mask-image:linear-gradient(180deg,#000 75%,transparent)}
 .note-card .prose p,.note-card .prose ul{margin-bottom:8px}
 .note-card .n-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
@@ -899,17 +906,77 @@ const find = (type, id) => DB[type].find(x => x.id === id);
 const highlight = (text, q) => { const t = esc(text); if (!q) return t; const i = t.toLowerCase().indexOf(esc(q).toLowerCase()); return i < 0 ? t : t.slice(0, i) + '<mark>' + t.slice(i, i + esc(q).length) + '</mark>' + t.slice(i + esc(q).length); };
 
 /** Minimal, safe rich text: **bold**, *italic*, `code`, "- " bullets, "# " headings, auto-links. */
-function richText(src) {
+/** The note categories you actually use: the built-in list plus your own. */
+function noteCats() {
+  const mine = ((DB.settings || {}).noteCats || []).filter(Boolean);
+  return [...new Set([...LISTS.noteCats, ...mine])];
+}
+function addNoteCat() {
+  const name = (prompt('Name the new category') || '').trim();
+  if (!name) return;
+  if (noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { toast('That category already exists'); return; }
+  DB.settings.noteCats = [...((DB.settings || {}).noteCats || []), name];
+  DB.settings.ts = Date.now();
+  saveDB();
+  UI.noteCat = name;
+  render();
+  toast(`Category “${name}” added`);
+}
+/** Tick or untick the nth checkbox in a note, and save it back. */
+function toggleNoteCheck(id, index) {
+  const note = (DB.notes || []).find(n => n.id === id);
+  if (!note) return;
+  let seen = -1;
+  note.content = String(note.content || '').split('\n').map(line => {
+    const m = line.match(/^(\s*[-*]\s+)\[([ xX])\](\s.*)?$/);
+    if (!m) return line;
+    seen++;
+    if (seen !== Number(index)) return line;
+    return m[1] + (m[2] === ' ' ? '[x]' : '[ ]') + (m[3] || '');
+  }).join('\n');
+  note.updated = today();
+  note.ts = Date.now();
+  saveDB();
+  render();
+}
+/** How many boxes a note has, and how many are ticked. */
+function noteProgress(note) {
+  const lines = String(note.content || '').split('\n');
+  let total = 0, done = 0;
+  lines.forEach(l => {
+    const m = l.match(/^\s*[-*]\s+\[([ xX])\]/);
+    if (!m) return;
+    total++;
+    if (m[1] !== ' ') done++;
+  });
+  return total ? { total, done } : null;
+}
+function richText(src, noteId) {
   const inline = s => s
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
     .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" data-act="noop">$1</a>');
-  let html = '', inList = false;
+  let html = '', inList = false, boxes = 0;
   for (const raw of esc(src || '').split('\n')) {
     const l = raw.trim();
     const li = l.match(/^[-*•]\s+(.*)/);
-    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${inline(li[1])}</li>`; continue; }
+    if (li) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      // "- [ ] thing" is a box you can tick, not a bullet
+      const box = li[1].match(/^\[([ xX])\]\s*(.*)$/);
+      if (box) {
+        const on = box[1] !== ' ';
+        html += `<li class="chk${on ? ' done' : ''}">`
+          + (noteId ? `<button class="chk-box${on ? ' on' : ''}" data-act="noteCheck" data-id="${noteId}" data-i="${boxes}" aria-pressed="${on}" aria-label="${on ? 'Tick off' : 'Mark done'}">${on ? icon('check', 12, 3.4) : ''}</button>`
+                    : `<span class="chk-box${on ? ' on' : ''}">${on ? icon('check', 12, 3.4) : ''}</span>`)
+          + `<span>${inline(box[2])}</span></li>`;
+        boxes++;
+        continue;
+      }
+      html += `<li>${inline(li[1])}</li>`;
+      continue;
+    }
     if (inList) { html += '</ul>'; inList = false; }
     if (!l) continue;
     const h = l.match(/^#{1,3}\s+(.*)/);
@@ -1232,9 +1299,8 @@ const FORMS = {
 
   notes: { noun: 'Note', wide: true, fields: [
     { k: 'title', l: 'Title', t: 'text', req: true, full: true },
-    { k: 'category', l: 'Category', t: 'select', o: LISTS.noteCats, def: 'Ideas' },
-    { k: 'tags', l: 'Tags', t: 'tags', ph: 'comma, separated' },
-    { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.' },
+    { k: 'category', l: 'Category', t: 'select', o: () => noteCats(), def: 'Ideas' },
+    { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.\nStart a line with - [ ] to make something you can tick off.' },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
   ] },
 
@@ -2578,12 +2644,10 @@ RENDER.courses = () => {
 RENDER.notes = () => {
   const q = UI.noteQuery.toLowerCase().trim();
   const list = DB.notes.filter(n =>
-    (UI.noteCat === 'All' || (UI.noteCat === 'Pinned' ? n.pinned : n.category === UI.noteCat)) &&
-    (!UI.noteTag || (n.tags || []).includes(UI.noteTag)) &&
-    (!q || [n.title, n.content, n.category, (n.tags || []).join(' ')].join(' ').toLowerCase().includes(q))
+    (UI.noteCat === 'All' || (UI.noteCat === 'Pinned' ? n.pinned
+      : UI.noteCat === 'Lists' ? !!noteProgress(n) : n.category === UI.noteCat)) &&
+    (!q || [n.title, n.content, n.category].join(' ').toLowerCase().includes(q))
   ).sort((a, b) => (b.pinned - a.pinned) || num(b.ts) - num(a.ts));
-  const tagCounts = {}; DB.notes.forEach(n => (n.tags || []).forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
-  const tags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 24);
   const side = (val, ic, label, n) => `<button class="side-btn${UI.noteCat === val ? ' on' : ''}" data-act="set" data-key="noteCat" data-val="${val}">${icon(ic, 15)}${label}<span class="n">${n}</span></button>`;
   return `
   <div class="notes-layout">
@@ -2591,20 +2655,27 @@ RENDER.notes = () => {
       <input class="input" type="search" data-bind="noteQuery" value="${esc(UI.noteQuery)}" placeholder="Filter notes…" aria-label="Filter notes">
       ${side('All', 'layers', 'All notes', DB.notes.length)}
       ${side('Pinned', 'pin', 'Pinned', DB.notes.filter(n => n.pinned).length)}
+      ${side('Lists', 'tasks', 'To-do lists', DB.notes.filter(n => noteProgress(n)).length)}
       <div class="side-label">Categories</div>
-      ${LISTS.noteCats.map(c => side(c, 'hash', c, DB.notes.filter(n => n.category === c).length)).join('')}
-      ${tags.length ? `<div class="side-label">Tags</div><div class="tag-cloud">${tags.map(([t]) => `<button class="${UI.noteTag === t ? 'on' : ''}" data-act="noteTag" data-val="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}
+      ${noteCats().map(c => side(c, 'hash', c, DB.notes.filter(n => n.category === c).length)).join('')}
+      <button class="side-btn" data-act="addNoteCat">${icon('plus', 15)}New category</button>
       <div style="margin-top:16px"><button class="btn btn-ghost sm" style="width:100%" data-act="exportCSV" data-val="Notes">${icon('download', 14)} Export CSV</button></div>
     </aside>
     <div>
-      ${UI.noteTag || q ? `<div class="toolbar"><span class="hint">${plural(list.length, 'note')}${UI.noteTag ? ` tagged <b class="txt-blue">#${esc(UI.noteTag)}</b>` : ''}${q ? ` matching “${esc(q)}”` : ''}</span><button class="btn btn-ghost sm" data-act="clearNoteFilters">${icon('x', 13)} Clear</button></div>` : ''}
+      <div class="toolbar">
+        <span class="hint">${plural(list.length, 'note')}${q ? ` matching “${esc(q)}”` : UI.noteCat !== 'All' ? ` in ${esc(UI.noteCat)}` : ''}</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost sm" data-act="newChecklist">${icon('tasks', 14)} New to-do list</button>
+        ${q ? `<button class="btn btn-ghost sm" data-act="clearNoteFilters">${icon('x', 13)} Clear</button>` : ''}
+      </div>
       ${list.length ? `<div class="masonry stagger">${list.map(n => `<article class="card hoverable note-card${n.pinned ? ' pinned' : ''}" data-act="edit" data-type="notes" data-id="${n.id}" tabindex="0">
         <div class="p-top"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
           <div class="hover-actions" style="opacity:1"><button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" title="${n.pinned ? 'Unpin' : 'Pin'}">${icon('pin', 15)}</button><button class="icon-btn danger" data-act="del" data-type="notes" data-id="${n.id}" title="Delete note">${icon('trash', 15)}</button></div></div>
         <h4>${highlight(n.title, q)}</h4>
-        <div class="prose">${richText(n.content) || '<p class="muted">Empty note</p>'}</div>
-        <div class="n-foot">${(n.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}<span class="muted">Edited ${ago(n.updated).toLowerCase()}</span></div>
-      </article>`).join('')}</div>` : `<div class="card">${emptyState('note', DB.notes.length ? 'No notes match' : 'No notes yet', DB.notes.length ? 'Try another category, tag or search.' : 'Capture ideas, references and meeting notes.', addBtn('notes', 'New note'))}</div>`}
+        <div class="prose">${richText(n.content, n.id) || '<p class="muted">Empty note</p>'}</div>
+        ${(() => { const p = noteProgress(n); return p ? `<div class="note-progress">${p.done}/${p.total} done<div class="bar ${p.done === p.total ? 'green' : ''}"><i style="width:${Math.round(p.done / p.total * 100)}%"></i></div></div>` : ''; })()}
+        <div class="n-foot"><span class="muted">Edited ${ago(n.updated).toLowerCase()}</span></div>
+      </article>`).join('')}</div>` : `<div class="card">${emptyState('note', DB.notes.length ? 'No notes match' : 'No notes yet', DB.notes.length ? 'Try another category or search.' : 'Capture ideas, references and meeting notes.', addBtn('notes', 'New note'))}</div>`}
     </div>
   </div>`;
 };
@@ -4476,6 +4547,9 @@ const ACTIONS = {
     if (window.innerWidth <= 900) $('.reader')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
   openJournal: el => { UI.journalSel = el.dataset.id; UI.journalQuery = ''; go('journal'); },
+  noteCheck: (el, e) => { if (e) e.stopPropagation(); toggleNoteCheck(el.dataset.id, el.dataset.i); },
+  addNoteCat: () => addNoteCat(),
+  newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned'].includes(UI.noteCat) ? UI.noteCat : 'Ideas' }),
   pinNote: el => { const n = find('notes', el.dataset.id); if (!n) return; n.pinned = !n.pinned; saveDB(); render(); toast(n.pinned ? 'Note pinned' : 'Note unpinned'); },
   noteTag: el => { UI.noteTag = UI.noteTag === el.dataset.val ? '' : el.dataset.val; render(); },
   clearNoteFilters: () => { UI.noteTag = ''; UI.noteQuery = ''; render(); },

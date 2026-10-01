@@ -237,6 +237,13 @@ button.item:active{opacity:.6}
 .capture{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:4px 4px 4px 14px}
 .capture input{flex:1;background:none;border:0;outline:none;padding:12px 0;min-width:0;font-size:16px}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.prose li.chk{list-style:none;margin-left:-18px;display:flex;gap:9px;align-items:flex-start}
+.prose li.chk.done > span{color:var(--text-3);text-decoration:line-through}
+.chk-box{width:21px;height:21px;flex-shrink:0;margin-top:1px;border-radius:7px;border:1.5px solid var(--line-strong);
+  background:none;display:grid;place-items:center;color:transparent;cursor:pointer;padding:0}
+.chk-box.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff}
+.note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--text-3)}
+.note-progress .bar{flex:1;max-width:120px}
 .prose{font-size:16px;line-height:1.75;color:var(--prose)}
 .prose p{margin:0 0 12px}
 .prose ul{margin:0 0 12px 18px}
@@ -580,17 +587,77 @@ const find = (type, id) => DB[type].find(x => x.id === id);
 const highlight = (text, q) => { const t = esc(text); if (!q) return t; const i = t.toLowerCase().indexOf(esc(q).toLowerCase()); return i < 0 ? t : t.slice(0, i) + '<mark>' + t.slice(i, i + esc(q).length) + '</mark>' + t.slice(i + esc(q).length); };
 
 /** Minimal, safe rich text: **bold**, *italic*, `code`, "- " bullets, "# " headings, auto-links. */
-function richText(src) {
+/** The note categories you actually use: the built-in list plus your own. */
+function noteCats() {
+  const mine = ((DB.settings || {}).noteCats || []).filter(Boolean);
+  return [...new Set([...LISTS.noteCats, ...mine])];
+}
+function addNoteCat() {
+  const name = (prompt('Name the new category') || '').trim();
+  if (!name) return;
+  if (noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { toast('That category already exists'); return; }
+  DB.settings.noteCats = [...((DB.settings || {}).noteCats || []), name];
+  DB.settings.ts = Date.now();
+  saveDB();
+  UI.noteCat = name;
+  render();
+  toast(`Category “${name}” added`);
+}
+/** Tick or untick the nth checkbox in a note, and save it back. */
+function toggleNoteCheck(id, index) {
+  const note = (DB.notes || []).find(n => n.id === id);
+  if (!note) return;
+  let seen = -1;
+  note.content = String(note.content || '').split('\n').map(line => {
+    const m = line.match(/^(\s*[-*]\s+)\[([ xX])\](\s.*)?$/);
+    if (!m) return line;
+    seen++;
+    if (seen !== Number(index)) return line;
+    return m[1] + (m[2] === ' ' ? '[x]' : '[ ]') + (m[3] || '');
+  }).join('\n');
+  note.updated = today();
+  note.ts = Date.now();
+  saveDB();
+  render();
+}
+/** How many boxes a note has, and how many are ticked. */
+function noteProgress(note) {
+  const lines = String(note.content || '').split('\n');
+  let total = 0, done = 0;
+  lines.forEach(l => {
+    const m = l.match(/^\s*[-*]\s+\[([ xX])\]/);
+    if (!m) return;
+    total++;
+    if (m[1] !== ' ') done++;
+  });
+  return total ? { total, done } : null;
+}
+function richText(src, noteId) {
   const inline = s => s
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
     .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" data-act="noop">$1</a>');
-  let html = '', inList = false;
+  let html = '', inList = false, boxes = 0;
   for (const raw of esc(src || '').split('\n')) {
     const l = raw.trim();
     const li = l.match(/^[-*•]\s+(.*)/);
-    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${inline(li[1])}</li>`; continue; }
+    if (li) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      // "- [ ] thing" is a box you can tick, not a bullet
+      const box = li[1].match(/^\[([ xX])\]\s*(.*)$/);
+      if (box) {
+        const on = box[1] !== ' ';
+        html += `<li class="chk${on ? ' done' : ''}">`
+          + (noteId ? `<button class="chk-box${on ? ' on' : ''}" data-act="noteCheck" data-id="${noteId}" data-i="${boxes}" aria-pressed="${on}" aria-label="${on ? 'Tick off' : 'Mark done'}">${on ? icon('check', 12, 3.4) : ''}</button>`
+                    : `<span class="chk-box${on ? ' on' : ''}">${on ? icon('check', 12, 3.4) : ''}</span>`)
+          + `<span>${inline(box[2])}</span></li>`;
+        boxes++;
+        continue;
+      }
+      html += `<li>${inline(li[1])}</li>`;
+      continue;
+    }
     if (inList) { html += '</ul>'; inList = false; }
     if (!l) continue;
     const h = l.match(/^#{1,3}\s+(.*)/);
@@ -913,9 +980,8 @@ const FORMS = {
 
   notes: { noun: 'Note', wide: true, fields: [
     { k: 'title', l: 'Title', t: 'text', req: true, full: true },
-    { k: 'category', l: 'Category', t: 'select', o: LISTS.noteCats, def: 'Ideas' },
-    { k: 'tags', l: 'Tags', t: 'tags', ph: 'comma, separated' },
-    { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.' },
+    { k: 'category', l: 'Category', t: 'select', o: () => noteCats(), def: 'Ideas' },
+    { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.\nStart a line with - [ ] to make something you can tick off.' },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
   ] },
 
@@ -3145,19 +3211,28 @@ SCREENS.money = () => {
 SCREENS.notes = () => {
   const q = UI.noteQuery.toLowerCase().trim();
   const list = DB.notes.filter(n =>
-    (UI.noteCat === 'All' || (UI.noteCat === 'Pinned' ? n.pinned : n.category === UI.noteCat)) &&
-    (!q || [n.title, n.content, (n.tags || []).join(' ')].join(' ').toLowerCase().includes(q))
+    (UI.noteCat === 'All' || (UI.noteCat === 'Pinned' ? n.pinned
+      : UI.noteCat === 'Lists' ? !!noteProgress(n) : n.category === UI.noteCat)) &&
+    (!q || [n.title, n.content, n.category].join(' ').toLowerCase().includes(q))
   ).sort((a, b) => (b.pinned - a.pinned) || num(b.ts) - num(a.ts));
-  const cats = ['All', 'Pinned', ...LISTS.noteCats];
+  const cats = ['All', 'Pinned', 'Lists', ...noteCats()];
   return `
   <div class="card" style="padding:10px"><input class="input" type="search" data-bind="noteQuery" value="${esc(UI.noteQuery)}" placeholder="Search notes…" aria-label="Search notes"></div>
-  ${seg('noteCat', cats.map(c => [c, c, c === 'All' ? DB.notes.length : c === 'Pinned' ? DB.notes.filter(n => n.pinned).length : DB.notes.filter(n => n.category === c).length]))}
+  ${seg('noteCat', cats.map(c => [c, c, c === 'All' ? DB.notes.length
+    : c === 'Pinned' ? DB.notes.filter(n => n.pinned).length
+    : c === 'Lists' ? DB.notes.filter(n => noteProgress(n)).length
+    : DB.notes.filter(n => n.category === c).length]))}
+  <div class="row" style="gap:8px;margin:0 2px 10px">
+    <button class="btn btn-ghost sm" data-act="newChecklist">${icon('tasks', 14)} New to-do list</button>
+    <button class="btn btn-ghost sm" data-act="addNoteCat">${icon('plus', 14)} Category</button>
+  </div>
   ${list.length ? list.map(n => `<div class="card tap" data-act="edit" data-type="notes" data-id="${n.id}">
     <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
       <button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" aria-label="Pin">${icon('pin', 17)}</button></div>
     <b style="font-size:16.5px;letter-spacing:-.01em">${highlight(n.title, q)}</b>
-    <div class="prose clamp" style="margin-top:7px;font-size:15px">${richText(n.content)}</div>
-    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${(n.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}<span class="hint" style="margin-left:auto">${ago(n.updated)}</span></div>
+    <div class="prose${noteProgress(n) ? '' : ' clamp'}" style="margin-top:7px;font-size:15px">${richText(n.content, n.id)}</div>
+    ${(() => { const p = noteProgress(n); return p ? `<div class="note-progress">${p.done}/${p.total} done<div class="bar ${p.done === p.total ? 'green' : ''}"><i style="width:${Math.round(p.done / p.total * 100)}%"></i></div></div>` : ''; })()}
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><span class="hint" style="margin-left:auto">${ago(n.updated)}</span></div>
   </div>`).join('') : `<div class="card">${emptyState('note', DB.notes.length ? 'No matches' : 'No notes yet', DB.notes.length ? 'Try another category or search.' : 'Capture ideas and references.', addBtn('notes', 'New note'))}</div>`}`;
 };
 
@@ -3726,6 +3801,9 @@ const ACTIONS = {
       openForm('journal', null, { content: text });
     }
   },
+  noteCheck: (el, e) => { if (e) e.stopPropagation(); toggleNoteCheck(el.dataset.id, el.dataset.i); },
+  addNoteCat: () => addNoteCat(),
+  newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned'].includes(UI.noteCat) ? UI.noteCat : 'Ideas' }),
   pinNote: el => { const n = find('notes', el.dataset.id); if (!n) return; n.pinned = !n.pinned; n.ts = Date.now(); saveDB(); render(); toast(n.pinned ? 'Pinned' : 'Unpinned'); },
   lessonPlus: el => {
     const c = find('courses', el.dataset.id); if (!c) return;
