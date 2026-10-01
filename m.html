@@ -657,12 +657,12 @@ const icon = (name, size = 18, sw = 1.9) => `<svg width="${size}" height="${size
    4. STORAGE — localStorage persistence
    ========================================================= */
 let DB = null;
-const emptyDB = () => ({ version: 1, settings: { name: '', currency: '$', studyWeekly: 10, exerciseWeekly: 4 }, projects: [], tasks: [], transactions: [], budgets: [], goals: [], journal: [], courses: [], notes: [], habits: [], habitLogs: [], study: [], workouts: [], trash: [] });
+const emptyDB = () => ({ version: 1, settings: { name: '', currency: '$', studyWeekly: 10, exerciseWeekly: 4 }, projects: [], tasks: [], transactions: [], budgets: [], goals: [], journal: [], courses: [], notes: [], habits: [], habitLogs: [], study: [], workouts: [], links: [], trash: [] });
 function normalizeDB(obj) {
   const base = emptyDB();
   const out = Object.assign(base, obj || {});
   out.settings = Object.assign(emptyDB().settings, (obj && obj.settings) || {});
-  ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'trash'].forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
+  ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links', 'trash'].forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
   return out;
 }
 function loadDB() {
@@ -1277,7 +1277,7 @@ function exportCSV(name) {
    ========================================================= */
 const SYNC_KEY = 'secondBrain.sync.v1';
 const SYNC_FILE = 'second-brain.json';
-const COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts'];
+const COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links'];
 const TOMB_DAYS = 120;          // how long a deletion is remembered
 const AUTO_EVERY = 5 * 60000;   // background sync interval
 
@@ -3185,6 +3185,7 @@ SCREENS.more = () => {
     </div>
   </div>
   <div class="more-grid">
+    ${tile('map', 'share', 'Map', 'How everything connects')}
     ${tile('projects', 'folder', 'Projects', plural(DB.projects.filter(p => p.status === 'Active').length, 'active project'))}
     ${tile('courses', 'cap', 'Courses', plural(DB.courses.filter(c => c.status === 'In Progress').length, 'in progress'))}
     ${tile('journal', 'book', 'Journal', plural(journalStreak(), 'day') + ' streak')}
@@ -3933,6 +3934,7 @@ function importBackup(file) {
 <!-- Assistant: say or type it, your Apps Script turns it into a record. -->
 <script src="update.js"></script>
 <script src="motion.js"></script>
+<script src="graph.js"></script>
 <script src="theme.js"></script>
 <script src="assistant.js"></script>
 <script src="cloud-config.js"></script>
