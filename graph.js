@@ -265,8 +265,20 @@ const Graph = {
   },
   radius(node) { return node.hub ? 13 + Math.min(16, Math.sqrt(node.count) * 2.4) : 5 + Math.min(10, node.deg * 1.5); },
 
-  toScreen(p) { return { x: (p.x + this.view.x) * this.view.k + this.w / 2, y: (p.y + this.view.y) * this.view.k + this.h / 2 }; },
+  toScreen(p, sway) {
+    const q = sway ? this.bob(p) : p;
+    return { x: (q.x + this.view.x) * this.view.k + this.w / 2, y: (q.y + this.view.y) * this.view.k + this.h / 2 };
+  },
   toWorld(x, y) { return { x: (x - this.w / 2) / this.view.k - this.view.x, y: (y - this.h / 2) / this.view.k - this.view.y }; },
+
+  /** A gentle sway, so a settled map still looks alive. Drawing only — the
+      layout underneath does not move, and it stops for reduce-motion. */
+  bob(p) {
+    if (this.still) return { x: p.x, y: p.y };
+    const t = performance.now() / 1000;
+    const seed = (p.key.charCodeAt(0) + p.key.length * 7) % 100;
+    return { x: p.x + Math.sin(t * 0.5 + seed) * 2.1, y: p.y + Math.cos(t * 0.42 + seed * 1.3) * 2.1 };
+  },
 
   draw() {
     const ctx = this.ctx;
@@ -286,7 +298,7 @@ const Graph = {
 
     const lineRGB = (cs.getPropertyValue('--text2-rgb') || '163,173,191').trim();
     this.edges.forEach(e => {
-      const a = this.toScreen(e.a), b = this.toScreen(e.b);
+      const a = this.toScreen(e.a, true), b = this.toScreen(e.b, true);
       const on = !near || (linked.has(e.a.key) && linked.has(e.b.key));
       ctx.strokeStyle = e.kind === 'manual'
         ? this.colour(e.a, on ? 0.75 : 0.12)
@@ -303,7 +315,7 @@ const Graph = {
     const label = (cs.getPropertyValue('--text') || '#E8ECF3').trim();
     const dim = (cs.getPropertyValue('--text-3') || '#6B7589').trim();
     this.nodes.forEach(p => {
-      const s = this.toScreen(p);
+      const s = this.toScreen(p, true);
       const r = this.radius(p) * Math.min(1.6, Math.max(0.7, this.view.k));
       const on = !near || linked.has(p.key);
       const isFocus = near && near.key === p.key;
@@ -352,8 +364,11 @@ const Graph = {
   loop() {
     this.raf = requestAnimationFrame(() => this.loop());
     if (document.hidden) return;
+    this.still = (DB.settings || {}).fxAmbient === false || (() => {
+      try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+    })();
     if (this.alpha > 0.03 || this.drag) this.step();
-    this.draw();
+    if (this.alpha > 0.03 || this.drag || !this.still) this.draw();
   },
 
   /* ---------------- interaction ---------------- */
@@ -573,7 +588,7 @@ const Graph = {
         <span class="spacer"></span>
         <button class="btn btn-ghost sm" data-g="retidy">${icon('sparkle', 14)} Tidy up</button>
       </div>
-      <div class="g-stage"><canvas id="graphCanvas"></canvas><div id="graphSide" class="g-side"></div></div>
+      <div class="g-stage"><div class="g-canvas"><canvas id="graphCanvas"></canvas></div><div id="graphSide" class="g-side"></div></div>
     </div>`;
   },
 
@@ -583,6 +598,10 @@ const Graph = {
     this.canvas = c;
     this.ctx = c.getContext('2d');
     this.build();
+    // the panel is filled first: on a phone it sits under the canvas, so until
+    // it has its height the canvas measures far taller than it ends up
+    this.paintBar();
+    this.paintTrail();
     this.fit();
     // settle it before the first paint, so the map opens laid out instead of
     // exploding outwards while you watch
@@ -593,17 +612,18 @@ const Graph = {
       this.alpha = 0.25;
     }
     this.wire();            // a fresh canvas each render, so fresh listeners
-    this.paintBar();
-    this.paintTrail();
+    // and once more after layout has fully settled, in case anything moved
+    requestAnimationFrame(() => this.fit());
     cancelAnimationFrame(this.raf);
     this.loop();
 
-    const stage = c.parentElement;
-    if (!this.ro && window.ResizeObserver) {
+    const stage = c.parentElement;                 // .g-canvas
+    if (this.ro) { try { this.ro.disconnect(); } catch (err) { /* ignore */ } }
+    if (window.ResizeObserver) {
       this.ro = new ResizeObserver(() => this.fit());
       this.ro.observe(stage);
     }
-    stage.parentElement.addEventListener('click', e => {
+    document.querySelector('.g-wrap').addEventListener('click', e => {
       const hit = e.target.closest('[data-g]');
       if (!hit) return;
       const what = hit.dataset.g;
@@ -671,15 +691,17 @@ const Graph = {
   fit() {
     const c = this.canvas;
     if (!c) return;
+    // measure the box the canvas actually fills, not whatever is around it
     const box = c.parentElement.getBoundingClientRect();
+    const was = this.h;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.w = Math.max(200, box.width);
-    this.h = Math.max(220, box.height);
+    this.w = Math.max(200, Math.round(box.width));
+    this.h = Math.max(200, Math.round(box.height));
+    const grew = Math.abs(this.h - was) > 24;
     c.width = Math.round(this.w * this.dpr);
     c.height = Math.round(this.h * this.dpr);
-    c.style.width = this.w + 'px';
-    c.style.height = this.h + 'px';
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (grew && this.nodes.length) this.frameAll();   // keep everything in view
     this.draw();
   },
 
@@ -742,8 +764,9 @@ const Graph = {
     .g-chip.off{opacity:.42}
     .g-chip.off i{background:var(--text-3)!important}
     .g-stage{position:relative;flex:1;min-height:0;border:1px solid var(--border);border-radius:var(--radius);
-      overflow:hidden;background:var(--surface)}
-    #graphCanvas{display:block;touch-action:none;cursor:grab}
+      overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
+    .g-canvas{position:relative;flex:1;min-height:0}
+    #graphCanvas{position:absolute;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:grab}
     .g-side{position:absolute;right:10px;top:10px;bottom:10px;width:252px;overflow:auto;padding:14px;
       background:color-mix(in srgb,var(--surface-2) 88%,transparent);backdrop-filter:blur(10px);
       border:1px solid var(--border);border-radius:13px;font-size:13px}
@@ -763,10 +786,10 @@ const Graph = {
     .g-conn span{font-size:11px;color:var(--text-3)}
     .g-conn .icon-btn.sm{width:26px;height:26px}
     @media (max-width:900px){
-      .g-wrap{height:calc(100vh - 230px)}
-      .g-side{position:static;width:auto;margin-top:10px;max-height:34vh;backdrop-filter:none}
-      .g-stage{display:flex;flex-direction:column}
-      #graphCanvas{flex:1;min-height:240px}
+      .g-wrap{height:calc(100vh - 215px)}
+      .g-canvas{min-height:260px}
+      .g-side{position:static;width:auto;max-height:36vh;backdrop-filter:none;border:0;
+        border-top:1px solid var(--border);border-radius:0;background:var(--surface-2)}
     }`;
     document.head.appendChild(s);
   }
