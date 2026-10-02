@@ -123,7 +123,7 @@ function handleInner(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 13 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 14 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -144,6 +144,7 @@ function handleInner(e, body) {
       case 'notifyRemove':  return json({ ok: true, result: removeNotifications() });
       case 'notifyRun':     return json({ ok: true, result: runNotifications() });
       case 'assist':        return json({ ok: true, result: assist(body) });
+      case 'workout':       return json({ ok: true, result: makeWorkout(body) });
       default:              return json({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -852,6 +853,117 @@ function addCharge(body) {
   if (t.cols.paid >= 0) t.sheet.getRange(rowNum, t.cols.paid + 1).setValue(body.paid ? 'Paid' : '');
   invalidateTabs();
   return { card: t.name, row: rowNum, currency: t.currency, paid: !!body.paid };
+}
+
+/**
+ * Build a session out of the exercises the app already knows about.
+ *
+ * The app sends its catalogue — one line per exercise — and what you asked for
+ * in your own words. Gemini picks from that list and nothing else, so a plan
+ * can never name a movement the library cannot open.
+ */
+function makeWorkout(body) {
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('GEMINI_KEY');
+  if (!key) {
+    throw new Error('No Gemini key yet. In the Apps Script editor open Project Settings, then Script properties, '
+      + 'and add GEMINI_KEY with a key from aistudio.google.com.');
+  }
+  var want = String(body.request || '').trim();
+  if (!want) throw new Error('Say what kind of workout you want.');
+  var catalogue = String(body.catalogue || '');
+  if (!catalogue) throw new Error('The app sent no exercises to choose from.');
+
+  var schema = {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'Short name for the session, four words at most.' },
+      focus: { type: 'string', description: 'One line on what it trains and who it suits.' },
+      minutes: { type: 'integer', description: 'Roughly how long it takes, warm-up included.' },
+      blocks: {
+        type: 'array',
+        description: 'The exercises in the order they should be done.',
+        items: {
+          type: 'object',
+          properties: {
+            slug: { type: 'string', description: 'Exactly one slug from the catalogue.' },
+            sets: { type: 'integer' },
+            reps: { type: 'string', description: 'A number, a range like 8-10, or a time like 30s.' },
+            rest: { type: 'integer', description: 'Seconds of rest after each set.' },
+            note: { type: 'string', description: 'One short coaching cue, or empty.' }
+          },
+          required: ['slug', 'sets', 'reps']
+        }
+      },
+      reply: { type: 'string', description: 'One sentence to show the person, plain and brief.' }
+    },
+    required: ['title', 'blocks', 'reply']
+  };
+
+  var prompt = [
+    'You are a strength coach picking a single session for someone.',
+    '',
+    'Pick only from this catalogue. Every slug you return must appear here exactly.',
+    'Each line is: slug | name | equipment | level | pattern | muscles',
+    catalogue,
+    '',
+    'Rules:',
+    '- Honour the equipment asked for. "Bodyweight only" means nothing else, no bands, no dumbbells.',
+    '- Start with one or two warm-up or mobility movements when the session is longer than fifteen minutes.',
+    '- Cover the patterns that make sense for the request rather than four variations of one thing.',
+    '- Six to nine exercises for a full session, three to five for a quick one.',
+    '- Rest is shorter for small movements and conditioning, longer for heavy compound lifts.',
+    '- Match the difficulty to any level mentioned; otherwise stay close to beginner and intermediate.',
+    '- Never invent a slug, a name or an exercise that is not in the catalogue.'
+  ].join('\n');
+
+  var res = UrlFetchApp.fetch(ASSIST_ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-goog-api-key': key },
+    muteHttpExceptions: true,
+    payload: JSON.stringify({
+      model: props.getProperty('GEMINI_MODEL') || ASSIST_MODEL,
+      input: [
+        { type: 'text', text: prompt },
+        { type: 'text', text: 'They asked for: ' + want }
+      ],
+      response_format: { type: 'text', mime_type: 'application/json', schema: schema }
+    })
+  });
+
+  var code = res.getResponseCode();
+  var raw = res.getContentText();
+  if (code !== 200) throw new Error(assistError(code, raw));
+
+  var out = JSON.parse(assistText(JSON.parse(raw)) || '{ }');
+  var allowed = {};
+  catalogue.split('\n').forEach(function (line) {
+    var slug = line.split('|')[0].trim();
+    if (slug) allowed[slug] = true;
+  });
+
+  var blocks = [];
+  (out.blocks || []).forEach(function (b) {
+    var slug = String((b && b.slug) || '').trim();
+    if (!allowed[slug]) return;                       // anything invented is dropped
+    blocks.push({
+      slug: slug,
+      sets: Math.max(1, Math.min(10, Number(b.sets) || 3)),
+      reps: String(b.reps || '10').slice(0, 20),
+      rest: Math.max(0, Math.min(300, Number(b.rest) || 60)),
+      note: String(b.note || '').slice(0, 140)
+    });
+  });
+  if (!blocks.length) throw new Error('Nothing usable came back — try describing the session differently.');
+
+  return {
+    title: String(out.title || 'Workout').slice(0, 60),
+    focus: String(out.focus || '').slice(0, 200),
+    minutes: Math.max(5, Math.min(180, Number(out.minutes) || 0)),
+    reply: String(out.reply || ''),
+    blocks: blocks
+  };
 }
 
 function setCardPaid(body) {

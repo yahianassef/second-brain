@@ -724,12 +724,12 @@ const icon = (name, size = 18, sw = 1.9) => `<svg width="${size}" height="${size
    4. STORAGE — localStorage persistence
    ========================================================= */
 let DB = null;
-const emptyDB = () => ({ version: 1, settings: { name: '', currency: '$', studyWeekly: 10, exerciseWeekly: 4 }, projects: [], tasks: [], transactions: [], budgets: [], goals: [], journal: [], courses: [], notes: [], habits: [], habitLogs: [], study: [], workouts: [], links: [], trash: [] });
+const emptyDB = () => ({ version: 1, settings: { name: '', currency: '$', studyWeekly: 10, exerciseWeekly: 4 }, projects: [], tasks: [], transactions: [], budgets: [], goals: [], journal: [], courses: [], notes: [], habits: [], habitLogs: [], study: [], workouts: [], links: [], routines: [], trash: [] });
 function normalizeDB(obj) {
   const base = emptyDB();
   const out = Object.assign(base, obj || {});
   out.settings = Object.assign(emptyDB().settings, (obj && obj.settings) || {});
-  ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links', 'trash'].forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
+  ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links', 'routines', 'trash'].forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
   return out;
 }
 function loadDB() {
@@ -1343,7 +1343,7 @@ function exportCSV(name) {
    ========================================================= */
 const SYNC_KEY = 'secondBrain.sync.v1';
 const SYNC_FILE = 'second-brain.json';
-const COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links'];
+const COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal', 'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links', 'routines'];
 const TOMB_DAYS = 120;          // how long a deletion is remembered
 const AUTO_EVERY = 5 * 60000;   // background sync interval
 
@@ -4014,6 +4014,7 @@ function importBackup(file) {
 <script src="motion.js"></script>
 <script src="gym-data.js"></script>
 <script src="gym.js"></script>
+<script src="gym-make.js"></script>
 <script src="graph.js"></script>
 <script src="polish.js"></script>
 <script src="theme.js"></script>

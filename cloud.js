@@ -15,7 +15,7 @@
 const CLOUD_SESSION = 'secondBrain.cloud.session';
 const CLOUD_STATE = 'secondBrain.cloud.state';
 const CLOUD_COLLECTIONS = ['projects', 'tasks', 'transactions', 'budgets', 'goals', 'journal',
-  'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links'];
+  'courses', 'notes', 'habits', 'habitLogs', 'study', 'workouts', 'links', 'routines'];
 const CLOUD_PAGE = 500;
 
 const Cloud = {
