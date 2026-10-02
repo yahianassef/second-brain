@@ -123,7 +123,7 @@ function handleInner(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 14 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 15 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -140,6 +140,7 @@ function handleInner(e, body) {
       case 'notifyPreview': return json({ ok: true, result: notifyPreview() });
       case 'notifyTest':    return json({ ok: true, result: notifyTest(body.message) });
       case 'notifyStatus':  return json({ ok: true, result: notifyTriggerStatus() });
+      case 'notifyCheck':   return json({ ok: true, result: notifyCheck(body) });
       case 'notifyInstall': return json({ ok: true, result: installNotifications() });
       case 'notifyRemove':  return json({ ok: true, result: removeNotifications() });
       case 'notifyRun':     return json({ ok: true, result: runNotifications() });
@@ -1443,26 +1444,37 @@ function notifySend(title, body, settings) {
 
   if (channel === 'ntfy') {
     if (!to) throw new Error('No ntfy topic set');
-    var topic = to.replace(/^https?:\/\/ntfy\.sh\//i, '');
-    UrlFetchApp.fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
+    var topic = to.replace(/^https?:\/\/ntfy\.sh\//i, '').replace(/^\/+|\/+$/g, '');
+    var res = UrlFetchApp.fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
       method: 'post',
       contentType: 'text/plain; charset=utf-8',
       payload: body,
       headers: { Title: title, Tags: 'brain', Priority: 'default' },
       muteHttpExceptions: true
     });
+    // a rejected push used to count as sent, which stamped the day and went
+    // quiet until tomorrow — say so instead
+    if (res.getResponseCode() >= 300) {
+      throw new Error('ntfy refused the message (' + res.getResponseCode() + '): '
+        + String(res.getContentText()).slice(0, 160));
+    }
     return 'ntfy:' + topic;
   }
   if (channel === 'telegram') {
     var parts = to.split('|');
     var token = (parts[0] || '').trim(), chat = (parts[1] || '').trim();
     if (!token || !chat) throw new Error('Telegram needs "botToken|chatId"');
-    UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+    var tg = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify({ chat_id: chat, text: title + '\n' + body, disable_web_page_preview: true }),
       muteHttpExceptions: true
     });
+    if (tg.getResponseCode() >= 300) {
+      var why = '';
+      try { why = JSON.parse(tg.getContentText()).description || ''; } catch (e) { why = ''; }
+      throw new Error('Telegram refused the message: ' + (why || tg.getResponseCode()));
+    }
     return 'telegram:' + chat;
   }
   var address = to || Session.getEffectiveUser().getEmail();
@@ -1730,6 +1742,51 @@ function removeNotifications() {
   });
   return { installed: false };
 }
+/**
+ * Everything that has to be true for a reminder to reach your phone, answered
+ * in one call. Nothing is sent unless you ask for it.
+ */
+function notifyCheck(body) {
+  var s = notifySettings();
+  var trig = notifyTriggerStatus();
+  var out = {
+    scheduleOn: trig.installed,
+    remindersOn: !!s.on,
+    channel: s.channel || 'email',
+    hasDestination: !!String(s.to || '').trim(),
+    destination: String(s.to || '').replace(/^(.{4}).*(.{3})$/, '$1…$2'),
+    timezone: trig.timezone,
+    scriptAccount: '',
+    categoriesOn: 0,
+    lastSent: trig.state || {},
+    nextHour: null,
+    delivery: null
+  };
+  try { out.scriptAccount = Session.getEffectiveUser().getEmail(); } catch (e) { out.scriptAccount = ''; }
+
+  var cats = s.cats || {};
+  Object.keys(cats).forEach(function (k) { if (cats[k] && cats[k].on) out.categoriesOn++; });
+
+  // when the next one is actually due, so silence can be explained
+  try {
+    var plan = notifyDue(true);
+    out.dueNow = plan.due.length;
+    out.hourNow = plan.hour;
+  } catch (e) {
+    out.dueNow = -1;
+  }
+
+  if (body && body.send) {
+    try {
+      out.delivery = { ok: true, where: notifySend('Second Brain · check',
+        'This is the delivery check. If it arrived, the channel works.', s) };
+    } catch (err) {
+      out.delivery = { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  }
+  return out;
+}
+
 function notifyTriggerStatus() {
   var found = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'runNotifications'; });
   return { installed: found.length > 0, count: found.length, timezone: notifyTZ(), state: notifyState() };

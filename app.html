@@ -740,6 +740,13 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .notify-row .grow b{font-size:14px;font-weight:600}
 .notify-row .hint{font-size:12px}
 .notify-row .toggle{height:auto;min-height:0}
+.nf-checks{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+.nf-check{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text-2)}
+.nf-check > span{width:19px;height:19px;flex-shrink:0;border-radius:50%;display:grid;place-items:center;
+  font-size:11px;background:rgba(var(--red-rgb),.16);color:var(--red-t)}
+.nf-check.ok > span{background:rgba(var(--green-rgb),.16);color:var(--green-t)}
+.nf-check b{display:block;color:var(--text);font-weight:600;font-size:13px}
+.nf-check i{font-style:normal;font-size:11.5px;color:var(--text-3)}
 .charge-note{display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding:13px 15px;
   background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
   font-size:13px;line-height:1.65;color:var(--text-2);cursor:pointer}
@@ -3578,6 +3585,7 @@ const Notify = {
         <div class="set-section"><h4>Check and switch on</h4>
           <p>Preview asks the script what it would send right now, without sending anything.</p>
           <div class="btn-row">
+            <button class="btn btn-primary" id="nfCheck">${icon('check', 15)} Check it end to end</button>
             <button class="btn btn-ghost" id="nfPreview">${icon('search', 15)} Preview</button>
             <button class="btn btn-ghost" id="nfInstall">${icon('clock', 15)} Turn the schedule on</button>
             <button class="btn btn-ghost" id="nfRemove">${icon('x', 15)} Turn it off</button>
@@ -3625,6 +3633,38 @@ const Notify = {
         toast('Test sent');
       } catch (err) { out(`<span class="txt-red">${esc(err.message)}</span>`); }
     };
+
+    const nfLine = (ok, label, detail) => `<div class="nf-check${ok ? ' ok' : ''}">`
+      + `<span>${ok ? '&#10003;' : '&#10007;'}</span><div><b>${label}</b>${detail ? `<i>${detail}</i>` : ''}</div></div>`;
+
+    $('#nfCheck', m).onclick = async () => {
+      out('<span class="muted">Asking your script…</span>');
+      try {
+        const r = (await Sheets.call('notifyCheck', { send: true })).result;
+        const chan = { email: 'Email', ntfy: 'ntfy', telegram: 'Telegram' }[r.channel] || r.channel;
+        const steps = [
+          nfLine(r.scheduleOn, 'The hourly schedule is on',
+            r.scheduleOn ? `running on ${esc(r.timezone)} time` : 'nothing will ever be sent until this is on'),
+          nfLine(r.remindersOn, 'Reminders are switched on',
+            r.remindersOn ? '' : 'the master switch above is off'),
+          nfLine(r.categoriesOn > 0, `${r.categoriesOn} ${r.categoriesOn === 1 ? 'reminder is' : 'reminders are'} chosen`,
+            r.categoriesOn ? '' : 'nothing is ticked in the list above'),
+          nfLine(r.hasDestination || r.channel === 'email', `${esc(chan)} has somewhere to send to`,
+            r.hasDestination ? esc(r.destination) : (r.channel === 'email' ? esc(r.scriptAccount) : 'no destination set')),
+          r.delivery
+            ? nfLine(r.delivery.ok, r.delivery.ok ? 'A message was just sent' : 'The channel refused it',
+                r.delivery.ok ? `via ${esc(r.delivery.where)} — look at your phone` : esc(r.delivery.error))
+            : ''
+        ].join('');
+        const quiet = r.dueNow === 0 && r.scheduleOn && r.remindersOn
+          ? `<p class="hint" style="margin-top:10px">Nothing is due this hour (it is ${r.hourNow}:00 where the script runs), `
+            + `and each reminder only fires when it is actually true. That is normal, not a fault.</p>` : '';
+        out(`<div class="nf-checks">${steps}</div>${quiet}`);
+      } catch (err) {
+        out(`<span class="txt-red">${esc(err.message)}</span>`);
+      }
+    };
+
     $('#nfPreview', m).onclick = async () => {
       notifySave(read());
       out('Asking the script…');
