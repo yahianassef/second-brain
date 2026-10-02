@@ -33,6 +33,7 @@ const Cloud = {
     this.cfg = (typeof window !== 'undefined' && window.SB_CLOUD_CONFIG) || null;
     try { this.session = JSON.parse(localStorage.getItem(CLOUD_SESSION) || 'null'); } catch (e) { this.session = null; }
     try { Object.assign(this.state, JSON.parse(localStorage.getItem(CLOUD_STATE) || '{}')); } catch (e) { /* ignore */ }
+    if (this.enabled()) this.captureOAuth();
   },
   saveSession() {
     try {
@@ -86,6 +87,54 @@ const Cloud = {
     if (res.access_token) { this.keep(res); return { signedIn: true }; }
     return { signedIn: false, confirmEmail: true };
   },
+  /** Hand off to Google. Supabase handles the round trip and sends the browser
+      back here with the session in the URL fragment. */
+  signInWithGoogle() {
+    const back = location.origin + location.pathname;
+    location.href = `${this.cfg.url}/auth/v1/authorize?provider=google`
+      + `&redirect_to=${encodeURIComponent(back)}`;
+  },
+
+  /** Pick the session out of the fragment after that round trip, then tidy the
+      address bar so a reload does not look like a fresh sign-in. */
+  captureOAuth() {
+    const hash = location.hash || '';
+    if (!hash.includes('access_token=')) {
+      if (hash.includes('error_description=')) {
+        const p = new URLSearchParams(hash.slice(1));
+        this.message = decodeURIComponent(p.get('error_description') || 'Sign-in was cancelled');
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+      return false;
+    }
+    const p = new URLSearchParams(hash.slice(1));
+    this.keep({
+      access_token: p.get('access_token'),
+      refresh_token: p.get('refresh_token'),
+      expires_in: Number(p.get('expires_in') || 3600),
+      user: null                       // filled in by the first call that needs it
+    });
+    history.replaceState(null, '', location.pathname + location.search);
+    return true;
+  },
+
+  /** Who the current token belongs to, for the account menu. */
+  async whoAmI() {
+    if (!this.signedIn()) return null;
+    try {
+      const res = await fetch(`${this.cfg.url}/auth/v1/user`, {
+        headers: { apikey: this.cfg.anonKey, Authorization: `Bearer ${this.session.access_token}` }
+      });
+      if (!res.ok) return null;
+      const user = await res.json();
+      this.session.user = { id: user.id, email: user.email };
+      this.saveSession();
+      return this.session.user;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async signIn(email, password) {
     const res = await this.auth('token?grant_type=password', { email, password });
     this.keep(res);

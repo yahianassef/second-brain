@@ -21,7 +21,7 @@
   color-scheme: light;
   --bg:#F4F6FB; --bg-2:#FFFFFF; --bg-rgb:244,246,251;
   --surface:#FFFFFF; --surface-2:#F4F7FC; --surface-3:#E9EEF7; --surface2-rgb:244,247,252;
-  --side-1:#FFFFFF; --side-2:#F7F9FD; --side1-rgb:255,255,255;
+  --side-1:#FFFFFF; --side-2:#F7F9FD;
   --pop:#FFFFFF; --pop-2:#F8FAFD;
   --card-2:#FBFCFE; --card-pin:#F2F7FF;
   --col-rgb:242,245,250; --veil-rgb:23,33,54;
@@ -43,6 +43,15 @@
   --shadow:0 16px 34px -20px rgba(23,33,54,.30);
 }
 
+/* A heatmap on a light page has to run pale-to-strong, or every cell with any
+   value at all reads as "a lot". */
+:root[data-theme="light"]{
+  --heat-b1:#D6E9FB; --heat-b2:#93C8F3; --heat-b3:#3E9BE0; --heat-b4:#0B6FB8;
+  --heat-g1:#D8F0E1; --heat-g2:#95DBB2; --heat-g3:#3FB474; --heat-g4:#15803D;
+  --heat-v1:#E6DEFB; --heat-v2:#C0ABF3; --heat-v3:#8B63E6; --heat-v4:#5B2FC6;
+  --heat-a1:#FCECCF; --heat-a2:#F5CE86; --heat-a3:#DE9F2A; --heat-a4:#A96C06;
+}
+
 /* The page texture and the big background washes are built for dark; on light
    they are dialled down rather than removed, so the page keeps its depth. */
 :root[data-theme="light"] .main{
@@ -59,14 +68,63 @@
 :root[data-theme="light"] .cc-tile{color:#fff}
 :root[data-theme="light"] .j-search{background:linear-gradient(180deg,var(--surface) 80%,transparent)}
 
-/* A heatmap on a light page has to run pale-to-strong, or every cell with any
-   value at all reads as "a lot". */
-:root[data-theme="light"]{
-  --heat-b1:#D6E9FB; --heat-b2:#93C8F3; --heat-b3:#3E9BE0; --heat-b4:#0B6FB8;
-  --heat-g1:#D8F0E1; --heat-g2:#95DBB2; --heat-g3:#3FB474; --heat-g4:#15803D;
-  --heat-v1:#E6DEFB; --heat-v2:#C0ABF3; --heat-v3:#8B63E6; --heat-v4:#5B2FC6;
-  --heat-a1:#FCECCF; --heat-a2:#F5CE86; --heat-a3:#DE9F2A; --heat-a4:#A96C06;
-}
+/* ---- backgrounds ----
+   A wash behind the app, chosen separately from the accent so the two can be
+   mixed. Each is painted on the page itself and tinted from whatever accent is
+   active, so none of them fight the theme. "plain" is the app as it was. */
+:root[data-backdrop="aurora"] body{
+  background-image:
+    radial-gradient(60% 50% at 12% 0%,rgba(var(--acc-rgb),.26),transparent 70%),
+    radial-gradient(55% 45% at 92% 8%,rgba(var(--acc2-rgb),.20),transparent 70%),
+    radial-gradient(45% 40% at 50% 100%,rgba(var(--violet-rgb),.16),transparent 70%);
+  background-attachment:fixed}
+:root[data-backdrop="dusk"] body{
+  background-image:
+    linear-gradient(160deg,rgba(var(--violet-rgb),.26),transparent 46%),
+    linear-gradient(20deg,rgba(var(--acc-rgb),.24),transparent 52%);
+  background-attachment:fixed}
+:root[data-backdrop="ember"] body{
+  background-image:
+    radial-gradient(60% 45% at 18% 4%,rgba(var(--amber-rgb),.22),transparent 70%),
+    radial-gradient(50% 45% at 88% 96%,rgba(var(--red-rgb),.18),transparent 70%);
+  background-attachment:fixed}
+:root[data-backdrop="forest"] body{
+  background-image:
+    radial-gradient(60% 50% at 80% 0%,rgba(var(--green-rgb),.22),transparent 70%),
+    radial-gradient(50% 45% at 10% 90%,rgba(var(--acc2-rgb),.16),transparent 70%);
+  background-attachment:fixed}
+:root[data-backdrop="mesh"] body{
+  background-image:
+    radial-gradient(38% 34% at 15% 18%,rgba(var(--acc-rgb),.24),transparent 62%),
+    radial-gradient(34% 30% at 82% 26%,rgba(var(--violet-rgb),.20),transparent 62%),
+    radial-gradient(36% 32% at 70% 82%,rgba(var(--acc2-rgb),.18),transparent 62%),
+    radial-gradient(30% 28% at 24% 78%,rgba(var(--green-rgb),.14),transparent 62%);
+  background-attachment:fixed}
+:root[data-backdrop="grid"] body{
+  background-image:
+    linear-gradient(rgba(var(--acc-rgb),.08) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(var(--acc-rgb),.08) 1px,transparent 1px);
+  background-size:38px 38px;background-attachment:fixed}
+:root[data-backdrop="dots"] body{
+  background-image:radial-gradient(rgba(var(--acc2-rgb),.16) 1.4px,transparent 1.4px);
+  background-size:24px 24px;background-attachment:fixed}
+
+/* The panes sit on the page, so they have to let it through for any of this to
+   be visible. How much is up to you. */
+:root[data-backdrop]:not([data-backdrop="plain"]) .main,
+:root[data-backdrop]:not([data-backdrop="plain"]) .screen{background-color:transparent}
+:root[data-backdrop]:not([data-backdrop="plain"]) .card,
+:root[data-backdrop]:not([data-backdrop="plain"]) .gym-card,
+:root[data-backdrop]:not([data-backdrop="plain"]) .more-tile{
+  background-image:none;
+  background-color:color-mix(in srgb,var(--surface) calc(var(--pane-solid,.92) * 100%),transparent);
+  backdrop-filter:blur(var(--pane-blur,10px));
+  -webkit-backdrop-filter:blur(var(--pane-blur,10px))}
+:root[data-backdrop]:not([data-backdrop="plain"]) .sidebar{
+  background-image:none;
+  background-color:color-mix(in srgb,var(--side-1) calc(var(--pane-solid,.92) * 100%),transparent);
+  backdrop-filter:blur(var(--pane-blur,10px));
+  -webkit-backdrop-filter:blur(var(--pane-blur,10px))}
 
 /* ---- accent colours ---- */
 :root[data-accent="blue"]{
@@ -80,6 +138,17 @@
   --blue-glow:rgba(0,140,255,.35);
   --on-bright:#03101C;
 }
+:root[data-accent="indigo"]{
+  --blue:#4F46E5; --blue-2:#818CF8;
+  --acc-rgb:79,70,229; --acc2-rgb:129,140,248; --accm-rgb:96,88,232;
+  --acc-deep:#3E34E2; --acc-up:#645CE8;
+  --acc-up-hi:#7E77EC; --acc-hi:#584FE6;
+  --acc-grad-1:#827CED; --acc-grad-2:#94A4F9;
+  --acc-ring:#6961E9; --acc-t:#BBC1FB; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(79,70,229,.14);
+  --blue-glow:rgba(129,140,248,.35);
+  --on-bright:#03101C;
+}
 :root[data-accent="violet"]{
   --blue:#7C4DFF; --blue-2:#B07CFF;
   --acc-rgb:124,77,255; --acc2-rgb:176,124,255; --accm-rgb:139,97,255;
@@ -91,26 +160,15 @@
   --blue-glow:rgba(176,124,255,.35);
   --on-bright:#03101C;
 }
-:root[data-accent="emerald"]{
-  --blue:#0E9F6E; --blue-2:#34D399;
-  --acc-rgb:14,159,110; --acc2-rgb:52,211,153; --accm-rgb:16,178,123;
-  --acc-deep:#0C8C61; --acc-up:#10B67E;
-  --acc-up-hi:#13D392; --acc-hi:#0FA874;
-  --acc-grad-1:#13D795; --acc-grad-2:#45D799;
-  --acc-ring:#10BB81; --acc-t:#66DEB2; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
-  --blue-soft:rgba(14,159,110,.14);
-  --blue-glow:rgba(52,211,153,.35);
-  --on-bright:#03101C;
-}
-:root[data-accent="amber"]{
-  --blue:#E08900; --blue-2:#FFB224;
-  --acc-rgb:224,137,0; --acc2-rgb:255,178,36; --accm-rgb:244,149,0;
-  --acc-deep:#CC7D00; --acc-up:#FA9900;
-  --acc-up-hi:#FFA619; --acc-hi:#EA8F00;
-  --acc-grad-1:#FFA81E; --acc-grad-2:#FFAD38;
-  --acc-ring:#FF9C00; --acc-t:#FFC861; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
-  --blue-soft:rgba(224,137,0,.14);
-  --blue-glow:rgba(255,178,36,.35);
+:root[data-accent="magenta"]{
+  --blue:#C026D3; --blue-2:#E879F9;
+  --acc-rgb:192,38,211; --acc2-rgb:232,121,249; --accm-rgb:200,51,218;
+  --acc-deep:#B023C2; --acc-up:#C937DB;
+  --acc-up-hi:#D051E0; --acc-hi:#C62AD9;
+  --acc-grad-1:#D156E1; --acc-grad-2:#E58DFA;
+  --acc-ring:#CA3CDC; --acc-t:#F2B4FC; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(192,38,211,.14);
+  --blue-glow:rgba(232,121,249,.35);
   --on-bright:#03101C;
 }
 :root[data-accent="rose"]{
@@ -124,6 +182,50 @@
   --blue-glow:rgba(255,107,154,.35);
   --on-bright:#03101C;
 }
+:root[data-accent="crimson"]{
+  --blue:#DC2626; --blue-2:#FB7185;
+  --acc-rgb:220,38,38; --acc2-rgb:251,113,133; --accm-rgb:223,56,56;
+  --acc-deep:#CD2121; --acc-up:#E03C3C;
+  --acc-up-hi:#E45656; --acc-hi:#DD2F2F;
+  --acc-grad-1:#E55B5B; --acc-grad-2:#FC859D;
+  --acc-ring:#E04040; --acc-t:#FDADB8; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(220,38,38,.14);
+  --blue-glow:rgba(251,113,133,.35);
+  --on-bright:#03101C;
+}
+:root[data-accent="amber"]{
+  --blue:#E08900; --blue-2:#FFB224;
+  --acc-rgb:224,137,0; --acc2-rgb:255,178,36; --accm-rgb:244,149,0;
+  --acc-deep:#CC7D00; --acc-up:#FA9900;
+  --acc-up-hi:#FFA619; --acc-hi:#EA8F00;
+  --acc-grad-1:#FFA81E; --acc-grad-2:#FFAD38;
+  --acc-ring:#FF9C00; --acc-t:#FFC861; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(224,137,0,.14);
+  --blue-glow:rgba(255,178,36,.35);
+  --on-bright:#03101C;
+}
+:root[data-accent="lime"]{
+  --blue:#65A30D; --blue-2:#A3E635;
+  --acc-rgb:101,163,13; --acc2-rgb:163,230,53; --accm-rgb:113,182,15;
+  --acc-deep:#59900B; --acc-up:#74BB0F;
+  --acc-up-hi:#85D711; --acc-hi:#6BAC0E;
+  --acc-grad-1:#88DC12; --acc-grad-2:#B5E847;
+  --acc-ring:#77BF0F; --acc-t:#BCED6B; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(101,163,13,.14);
+  --blue-glow:rgba(163,230,53,.35);
+  --on-bright:#03101C;
+}
+:root[data-accent="emerald"]{
+  --blue:#0E9F6E; --blue-2:#34D399;
+  --acc-rgb:14,159,110; --acc2-rgb:52,211,153; --accm-rgb:16,178,123;
+  --acc-deep:#0C8C61; --acc-up:#10B67E;
+  --acc-up-hi:#13D392; --acc-hi:#0FA874;
+  --acc-grad-1:#13D795; --acc-grad-2:#45D799;
+  --acc-ring:#10BB81; --acc-t:#66DEB2; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(14,159,110,.14);
+  --blue-glow:rgba(52,211,153,.35);
+  --on-bright:#03101C;
+}
 :root[data-accent="teal"]{
   --blue:#0D94AE; --blue-2:#2DD4BF;
   --acc-rgb:13,148,174; --acc2-rgb:45,212,191; --accm-rgb:14,164,193;
@@ -133,6 +235,28 @@
   --acc-ring:#0FACCA; --acc-t:#60DECE; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
   --blue-soft:rgba(13,148,174,.14);
   --blue-glow:rgba(45,212,191,.35);
+  --on-bright:#03101C;
+}
+:root[data-accent="sky"]{
+  --blue:#0284C7; --blue-2:#38BDF8;
+  --acc-rgb:2,132,199; --acc2-rgb:56,189,248; --accm-rgb:2,145,219;
+  --acc-deep:#0277B3; --acc-up:#0295E0;
+  --acc-up-hi:#05A8FC; --acc-hi:#028BD1;
+  --acc-grad-1:#0AAAFD; --acc-grad-2:#4CCEF9;
+  --acc-ring:#0298E5; --acc-t:#73D1FA; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(2,132,199,.14);
+  --blue-glow:rgba(56,189,248,.35);
+  --on-bright:#03101C;
+}
+:root[data-accent="slate"]{
+  --blue:#64748B; --blue-2:#94A3B8;
+  --acc-rgb:100,116,139; --acc2-rgb:148,163,184; --accm-rgb:109,126,150;
+  --acc-deep:#5B6A7F; --acc-up:#708198;
+  --acc-up-hi:#8290A5; --acc-hi:#687991;
+  --acc-grad-1:#8593A7; --acc-grad-2:#A0AFC0;
+  --acc-ring:#73839A; --acc-t:#B9C3D0; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(100,116,139,.14);
+  --blue-glow:rgba(148,163,184,.35);
   --on-bright:#03101C;
 }
 :root[data-theme="light"][data-accent="blue"]{
@@ -146,6 +270,17 @@
   --blue-glow:rgba(0,168,255,.30);
   --on-bright:#06202B;
 }
+:root[data-theme="light"][data-accent="indigo"]{
+  --blue:#4F46E5; --blue-2:#818CF8;
+  --acc-rgb:79,70,229; --acc2-rgb:129,140,248; --accm-rgb:96,88,232;
+  --acc-deep:#3E34E2; --acc-up:#645CE8;
+  --acc-up-hi:#7E77EC; --acc-hi:#584FE6;
+  --acc-grad-1:#827CED; --acc-grad-2:#94A4F9;
+  --acc-ring:#6961E9; --acc-t:#1126F8; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(79,70,229,.10);
+  --blue-glow:rgba(129,140,248,.30);
+  --on-bright:#06202B;
+}
 :root[data-theme="light"][data-accent="violet"]{
   --blue:#7C4DFF; --blue-2:#B07CFF;
   --acc-rgb:124,77,255; --acc2-rgb:176,124,255; --accm-rgb:139,97,255;
@@ -157,26 +292,15 @@
   --blue-glow:rgba(176,124,255,.30);
   --on-bright:#06202B;
 }
-:root[data-theme="light"][data-accent="emerald"]{
-  --blue:#0E9F6E; --blue-2:#34D399;
-  --acc-rgb:14,159,110; --acc2-rgb:52,211,153; --accm-rgb:16,178,123;
-  --acc-deep:#0C8C61; --acc-up:#10B67E;
-  --acc-up-hi:#13D392; --acc-hi:#0FA874;
-  --acc-grad-1:#13D795; --acc-grad-2:#45D799;
-  --acc-ring:#10BB81; --acc-t:#17805A; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
-  --blue-soft:rgba(14,159,110,.10);
-  --blue-glow:rgba(52,211,153,.30);
-  --on-bright:#06202B;
-}
-:root[data-theme="light"][data-accent="amber"]{
-  --blue:#E08900; --blue-2:#FFB224;
-  --acc-rgb:224,137,0; --acc2-rgb:255,178,36; --accm-rgb:244,149,0;
-  --acc-deep:#CC7D00; --acc-up:#FA9900;
-  --acc-up-hi:#FFA619; --acc-hi:#EA8F00;
-  --acc-grad-1:#FFA81E; --acc-grad-2:#FFAD38;
-  --acc-ring:#FF9C00; --acc-t:#B37400; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
-  --blue-soft:rgba(224,137,0,.10);
-  --blue-glow:rgba(255,178,36,.30);
+:root[data-theme="light"][data-accent="magenta"]{
+  --blue:#C026D3; --blue-2:#E879F9;
+  --acc-rgb:192,38,211; --acc2-rgb:232,121,249; --accm-rgb:200,51,218;
+  --acc-deep:#B023C2; --acc-up:#C937DB;
+  --acc-up-hi:#D051E0; --acc-hi:#C62AD9;
+  --acc-grad-1:#D156E1; --acc-grad-2:#E58DFA;
+  --acc-ring:#CA3CDC; --acc-t:#DA07FA; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(192,38,211,.10);
+  --blue-glow:rgba(232,121,249,.30);
   --on-bright:#06202B;
 }
 :root[data-theme="light"][data-accent="rose"]{
@@ -190,6 +314,50 @@
   --blue-glow:rgba(255,107,154,.30);
   --on-bright:#06202B;
 }
+:root[data-theme="light"][data-accent="crimson"]{
+  --blue:#DC2626; --blue-2:#FB7185;
+  --acc-rgb:220,38,38; --acc2-rgb:251,113,133; --accm-rgb:223,56,56;
+  --acc-deep:#CD2121; --acc-up:#E03C3C;
+  --acc-up-hi:#E45656; --acc-hi:#DD2F2F;
+  --acc-grad-1:#E55B5B; --acc-grad-2:#FC859D;
+  --acc-ring:#E04040; --acc-t:#FB0125; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(220,38,38,.10);
+  --blue-glow:rgba(251,113,133,.30);
+  --on-bright:#06202B;
+}
+:root[data-theme="light"][data-accent="amber"]{
+  --blue:#E08900; --blue-2:#FFB224;
+  --acc-rgb:224,137,0; --acc2-rgb:255,178,36; --accm-rgb:244,149,0;
+  --acc-deep:#CC7D00; --acc-up:#FA9900;
+  --acc-up-hi:#FFA619; --acc-hi:#EA8F00;
+  --acc-grad-1:#FFA81E; --acc-grad-2:#FFAD38;
+  --acc-ring:#FF9C00; --acc-t:#B37400; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(224,137,0,.10);
+  --blue-glow:rgba(255,178,36,.30);
+  --on-bright:#06202B;
+}
+:root[data-theme="light"][data-accent="lime"]{
+  --blue:#65A30D; --blue-2:#A3E635;
+  --acc-rgb:101,163,13; --acc2-rgb:163,230,53; --accm-rgb:113,182,15;
+  --acc-deep:#59900B; --acc-up:#74BB0F;
+  --acc-up-hi:#85D711; --acc-hi:#6BAC0E;
+  --acc-grad-1:#88DC12; --acc-grad-2:#B5E847;
+  --acc-ring:#77BF0F; --acc-t:#679C0F; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(101,163,13,.10);
+  --blue-glow:rgba(163,230,53,.30);
+  --on-bright:#06202B;
+}
+:root[data-theme="light"][data-accent="emerald"]{
+  --blue:#0E9F6E; --blue-2:#34D399;
+  --acc-rgb:14,159,110; --acc2-rgb:52,211,153; --accm-rgb:16,178,123;
+  --acc-deep:#0C8C61; --acc-up:#10B67E;
+  --acc-up-hi:#13D392; --acc-hi:#0FA874;
+  --acc-grad-1:#13D795; --acc-grad-2:#45D799;
+  --acc-ring:#10BB81; --acc-t:#17805A; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(14,159,110,.10);
+  --blue-glow:rgba(52,211,153,.30);
+  --on-bright:#06202B;
+}
 :root[data-theme="light"][data-accent="teal"]{
   --blue:#0D94AE; --blue-2:#2DD4BF;
   --acc-rgb:13,148,174; --acc2-rgb:45,212,191; --accm-rgb:14,164,193;
@@ -199,6 +367,28 @@
   --acc-ring:#0FACCA; --acc-t:#157C6F; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
   --blue-soft:rgba(13,148,174,.10);
   --blue-glow:rgba(45,212,191,.30);
+  --on-bright:#06202B;
+}
+:root[data-theme="light"][data-accent="sky"]{
+  --blue:#0284C7; --blue-2:#38BDF8;
+  --acc-rgb:2,132,199; --acc2-rgb:56,189,248; --accm-rgb:2,145,219;
+  --acc-deep:#0277B3; --acc-up:#0295E0;
+  --acc-up-hi:#05A8FC; --acc-hi:#028BD1;
+  --acc-grad-1:#0AAAFD; --acc-grad-2:#4CCEF9;
+  --acc-ring:#0298E5; --acc-t:#0284BE; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(2,132,199,.10);
+  --blue-glow:rgba(56,189,248,.30);
+  --on-bright:#06202B;
+}
+:root[data-theme="light"][data-accent="slate"]{
+  --blue:#64748B; --blue-2:#94A3B8;
+  --acc-rgb:100,116,139; --acc2-rgb:148,163,184; --accm-rgb:109,126,150;
+  --acc-deep:#5B6A7F; --acc-up:#708198;
+  --acc-up-hi:#8290A5; --acc-hi:#687991;
+  --acc-grad-1:#8593A7; --acc-grad-2:#A0AFC0;
+  --acc-ring:#73839A; --acc-t:#52698A; --acc-t2:var(--acc-t); --acc-t3:var(--acc-t);
+  --blue-soft:rgba(100,116,139,.10);
+  --blue-glow:rgba(148,163,184,.30);
   --on-bright:#06202B;
 }
 /* light mode before any accent has been picked */
