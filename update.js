@@ -7,7 +7,7 @@
    cache. This refetches the page and every script it loads with the cache
    deliberately bypassed, so the reload afterwards picks up the new files.
    ========================================================= */
-const UPDATE_FILES = ['theme.css', 'update.js', 'push.js', 'sw.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js',
+const UPDATE_FILES = ['theme.css', 'update.js', 'push.js', 'sw.js', 'connect-config.js', 'signin.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js',
   'theme.js', 'assistant.js', 'cloud-config.js', 'cloud.js', 'cloud-ui.js'];
 
 const AppUpdate = {
