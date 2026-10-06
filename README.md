@@ -56,7 +56,8 @@ add on one device shows up on the others.
 - **Courses** — lessons completed, progress, deadlines, resources
 - **Notes** — write freely and keep a to-do list in the same note: real tick boxes in the editor (Enter adds
   the next item, Backspace on an empty one removes it), tick or add items straight from the card, and a
-  **To-do lists** filter. Categories are your own — add, rename or remove them, and a removed category's
+  **To-do lists** filter. Categories are your own, each with a lamp icon — add, rename or delete them (trash beside each one on desktop,
+  **Delete** on the phone), and a removed category's
   notes move to the first one left. Pinning as before
 - **Notifications** — reminders on your phone for expense logging, journalling, tasks, habits,
   budgets, project and course status, study and exercise targets, credit cards and car service.
