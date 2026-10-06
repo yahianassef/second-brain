@@ -502,6 +502,8 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6) sepia(1) h
   background:none;display:grid;place-items:center;color:transparent;cursor:pointer;padding:0}
 .chk-box.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff}
 .note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px;color:var(--text-3)}
+.chip.remind{color:var(--blue-2);border-color:rgba(var(--acc2-rgb),.3)}
+.chip.remind.past{color:var(--text-3);border-color:var(--border)}
 .cl-head{display:flex;align-items:center;gap:7px;margin:14px 0 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
 .cl-count{font-weight:500;color:var(--text-3)}
 .cl-list{display:flex;flex-direction:column;gap:6px}
@@ -1089,6 +1091,23 @@ function wireNoteEditor(form) {
   return { add, list };
 }
 
+/** "Remind me" on a note: the phone's own clock turned into one moment in time, so the script's time zone cannot move it. */
+function noteRemindAfter(n) {
+  const t = n.remindAt ? new Date(n.remindAt).getTime() : 0;
+  n.remindTs = isFinite(t) ? t : 0;
+  if (n.remindTs && n.remindTs > Date.now() && typeof Sheets !== 'undefined' && Sheets.connected()) {
+    setTimeout(() => { try { Sheets.queue(true); } catch (e) { /* the next sync carries it */ } }, 0);
+  }
+}
+/** The bell on a note card. */
+function noteRemindChip(n) {
+  const t = Number(n.remindTs) || 0;
+  if (!t) return '';
+  const d = new Date(t), past = t <= Date.now();
+  const when = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `<span class="chip remind${past ? ' past' : ''}" title="${past ? 'Reminder sent' : 'Reminder on your phone'}">${icon('clock', 11)} ${past ? 'Reminded ' : ''}${esc(when)}</span>`;
+}
+
 /* Categories are yours: rename them, remove them, add as many as you like. */
 function setNoteCats(list) {
   DB.settings.noteCatList = list;
@@ -1515,8 +1534,10 @@ const FORMS = {
     { k: 'title', l: 'Title', t: 'text', req: true, full: true },
     { k: 'category', l: 'Category', t: 'select', o: () => [...noteCats(), { v: '__new', l: '+ New category…' }], def: () => noteCats()[0] || 'Ideas' },
     { k: 'content', l: 'Note', t: 'note', full: true },
+    { k: 'remindAt', l: 'Remind me on my phone', t: 'datetime-local', full: true, ph: 'Pick a date and time' },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
-  ] },
+  ], validate: (v, item) => v.remindAt && v.remindAt !== (item && item.remindAt) && new Date(v.remindAt).getTime() < Date.now() - 60000 ? 'Pick a reminder time that is still ahead — or clear it' : '',
+     after: n => noteRemindAfter(n) },
 
   habits: { noun: 'Habit', fields: [
     { k: 'name', l: 'Habit', t: 'text', req: true, full: true, ph: 'e.g. Read 20 pages' },
@@ -2895,7 +2916,7 @@ RENDER.notes = () => {
         ${q ? `<button class="btn btn-ghost sm" data-act="clearNoteFilters">${icon('x', 13)} Clear</button>` : ''}
       </div>
       ${list.length ? `<div class="masonry stagger">${list.map(n => `<article class="card hoverable note-card${n.pinned ? ' pinned' : ''}" data-act="edit" data-type="notes" data-id="${n.id}" tabindex="0">
-        <div class="p-top"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
+        <div class="p-top"><span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>${noteRemindChip(n)}</span>
           <div class="hover-actions" style="opacity:1"><button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" title="${n.pinned ? 'Unpin' : 'Pin'}">${icon('pin', 15)}</button><button class="icon-btn danger" data-act="del" data-type="notes" data-id="${n.id}" title="Delete note">${icon('trash', 15)}</button></div></div>
         <h4>${highlight(n.title, q)}</h4>
         <div class="prose${noteProgress(n) ? ' full' : ''}">${richText(n.content, n.id) || '<p class="muted">Empty note</p>'}</div>

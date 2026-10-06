@@ -1,6 +1,8 @@
 /**
  * Second Brain — Google Sheets sync API
  * =====================================
+ * v17 — a reminder set on a note arrives on the phone at that time, checked every
+ *      five minutes. The schedule for it sets itself up on its first hourly run.
  * v16 — reminders straight to an iPhone with no app to install: add the site to
  *      the Home Screen and turn notifications on there (channel "This phone").
  * v9 — reads the month's income from the "Starting …" block, including amounts
@@ -131,7 +133,7 @@ function handleInner(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 16 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 17 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -1706,6 +1708,7 @@ function notifyDue(force) {
 
 /** The hourly trigger. */
 function runNotifications() {
+  ensureNoteReminders();
   var plan = notifyDue(false);
   if (!plan.settings.on) return plan;
   var state = notifyState();
@@ -1747,13 +1750,61 @@ function notifyTest(body) {
 function installNotifications() {
   removeNotifications();
   ScriptApp.newTrigger('runNotifications').timeBased().everyHours(1).create();
+  ensureNoteReminders();
   return notifyTriggerStatus();
 }
 function removeNotifications() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'runNotifications') ScriptApp.deleteTrigger(t);
+    var fn = t.getHandlerFunction();
+    if (fn === 'runNotifications' || fn === 'runNoteReminders') ScriptApp.deleteTrigger(t);
   });
   return { installed: false };
+}
+
+/* ---------------- reminders set on a note ----------------
+   A note can carry a time (remindTs, milliseconds, set by the app from the
+   phone's own clock, so time zones cannot shift it). Every five minutes this
+   sends the ones whose time has come, once each. */
+var NOTE_REMIND_KEY = 'secondBrainNoteReminders';
+
+function ensureNoteReminders() {
+  var has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'runNoteReminders'; });
+  if (!has) ScriptApp.newTrigger('runNoteReminders').timeBased().everyMinutes(5).create();
+}
+
+function noteReminderText(n) {
+  var lines = String(n.content || '').split('\n').map(function (l) {
+    var m = l.match(/^\s*[-*]\s+\[([ xX])\]\s?(.*)$/);
+    if (m) return m[1] === ' ' ? '☐ ' + m[2] : '';
+    return l.replace(/^#+\s*/, '').replace(/\*\*/g, '');
+  }).filter(function (l) { return l.trim(); });
+  return lines.join('\n').slice(0, 400) || 'Reminder from your notes';
+}
+
+function runNoteReminders(nowMs) {
+  applyUserConfig();
+  var now = nowMs || Date.now();
+  var s = notifySettings();
+  if (s.on === false) return { sent: [] };
+  var brain = readBrain() || {};
+  var notes = Array.isArray(brain.notes) ? brain.notes : [];
+  var props = PropertiesService.getScriptProperties();
+  var done = {};
+  try { done = JSON.parse(props.getProperty(NOTE_REMIND_KEY) || '{}'); } catch (e) { done = {}; }
+  var sent = [], keep = {};
+  notes.forEach(function (n) {
+    var at = Number(n.remindTs) || 0;
+    if (!at) return;
+    if (done[n.id] === at) { keep[n.id] = at; return; }          // already sent for this time
+    if (at > now || now - at > 24 * 3600000) return;           // not yet, or too old to be useful
+    try {
+      notifySend('⏰ ' + (n.title || 'Note'), noteReminderText(n), s);
+      keep[n.id] = at;
+      sent.push(n.id);
+    } catch (err) { /* left unsent; the next run tries again */ }
+  });
+  props.setProperty(NOTE_REMIND_KEY, JSON.stringify(keep));
+  return { sent: sent };
 }
 /**
  * Everything that has to be true for a reminder to reach your phone, answered
@@ -1804,6 +1855,7 @@ function notifyCheck(body) {
 
 function notifyTriggerStatus() {
   var found = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'runNotifications'; });
+  try { if (found.length) ensureNoteReminders(); } catch (e) { /* needs the schedule permission */ }
   return { installed: found.length > 0, count: found.length, timezone: notifyTZ(), state: notifyState() };
 }
 

@@ -48,7 +48,7 @@ const PhonePush = {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') throw new Error('Notifications were not allowed. You can allow them later in the phone’s Settings.');
     const ping = await Sheets.call('ping', {}, 'GET');
-    if (!ping.version || ping.version < 16) throw new Error('Your Apps Script needs the latest version for this. Paste the new Code.gs and deploy a new version.');
+    if (!ping.version || ping.version < 17) throw new Error('Your Apps Script needs the latest version for this. Paste the new Code.gs and deploy a new version.');
     const key = (await Sheets.call('pushKey', {})).result.publicKey;
     const reg = await this.registration();
     let sub = await reg.pushManager.getSubscription();
@@ -98,6 +98,35 @@ const PhonePush = {
     });
   }
 };
+
+/** One tap from the prompt: turn it on, make this phone the channel, prove it with a first notification. */
+PhonePush.quickOn = async function () {
+  try {
+    await this.enable();
+    const n = (DB.settings && DB.settings.notify) || {};
+    if (typeof notifySave === 'function') notifySave({ on: true, channel: 'webpush', to: n.to || '', cats: n.cats || {} });
+    try { await Sheets.sync(); } catch (e) { /* the test below says if it did not land */ }
+    const st = (await Sheets.call('notifyStatus', {})).result;
+    if (!st.installed) await Sheets.call('notifyInstall', {});
+    await Sheets.call('notifyTest', { message: 'Notifications are on. Reminders from your notes will appear here.' });
+    toast('Notifications are on — a first one is on its way');
+  } catch (err) {
+    toast(err.message, { tone: 'error' });
+  }
+};
+
+/* Opened from the Home Screen, synced, and never asked: offer it once per day, in one tap. */
+PhonePush.offer = async function () {
+  try {
+    if (!this.homeScreen || this.can() !== 'ready' || Notification.permission !== 'default') return;
+    if (typeof Sheets === 'undefined' || !Sheets.connected()) return;
+    const key = 'secondBrain.pushOffered', day = new Date().toDateString();
+    if (localStorage.getItem(key) === day) return;
+    localStorage.setItem(key, day);
+    toast('Get your reminders on this phone?', { action: 'Turn on', onAction: () => this.quickOn() });
+  } catch (e) { /* optional */ }
+};
+window.addEventListener('load', () => setTimeout(() => PhonePush.offer(), 2500));
 
 /* Keep the helper current, and keep the script's address current if sync moves. */
 if ('serviceWorker' in navigator) {

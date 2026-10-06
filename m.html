@@ -256,6 +256,8 @@ button.item:active{opacity:.6}
   background:none;display:grid;place-items:center;color:transparent;cursor:pointer;padding:0}
 .chk-box.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff}
 .note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--text-3)}
+.chip.remind{color:var(--blue-2);border-color:rgba(var(--acc2-rgb),.3)}
+.chip.remind.past{color:var(--text-3);border-color:var(--border)}
 .cl-head{display:flex;align-items:center;gap:7px;margin:14px 0 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
 .cl-count{font-weight:500;color:var(--text-3)}
 .cl-list{display:flex;flex-direction:column;gap:6px}
@@ -766,6 +768,23 @@ function wireNoteEditor(form) {
   return { add, list };
 }
 
+/** "Remind me" on a note: the phone's own clock turned into one moment in time, so the script's time zone cannot move it. */
+function noteRemindAfter(n) {
+  const t = n.remindAt ? new Date(n.remindAt).getTime() : 0;
+  n.remindTs = isFinite(t) ? t : 0;
+  if (n.remindTs && n.remindTs > Date.now() && typeof Sheets !== 'undefined' && Sheets.connected()) {
+    setTimeout(() => { try { Sheets.queue(true); } catch (e) { /* the next sync carries it */ } }, 0);
+  }
+}
+/** The bell on a note card. */
+function noteRemindChip(n) {
+  const t = Number(n.remindTs) || 0;
+  if (!t) return '';
+  const d = new Date(t), past = t <= Date.now();
+  const when = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `<span class="chip remind${past ? ' past' : ''}" title="${past ? 'Reminder sent' : 'Reminder on your phone'}">${icon('clock', 11)} ${past ? 'Reminded ' : ''}${esc(when)}</span>`;
+}
+
 /* Categories are yours: rename them, remove them, add as many as you like. */
 function setNoteCats(list) {
   DB.settings.noteCatList = list;
@@ -1192,8 +1211,10 @@ const FORMS = {
     { k: 'title', l: 'Title', t: 'text', req: true, full: true },
     { k: 'category', l: 'Category', t: 'select', o: () => [...noteCats(), { v: '__new', l: '+ New category…' }], def: () => noteCats()[0] || 'Ideas' },
     { k: 'content', l: 'Note', t: 'note', full: true },
+    { k: 'remindAt', l: 'Remind me on my phone', t: 'datetime-local', full: true, ph: 'Pick a date and time' },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
-  ] },
+  ], validate: (v, item) => v.remindAt && v.remindAt !== (item && item.remindAt) && new Date(v.remindAt).getTime() < Date.now() - 60000 ? 'Pick a reminder time that is still ahead — or clear it' : '',
+     after: n => noteRemindAfter(n) },
 
   habits: { noun: 'Habit', fields: [
     { k: 'name', l: 'Habit', t: 'text', req: true, full: true, ph: 'e.g. Read 20 pages' },
@@ -3532,7 +3553,7 @@ SCREENS.notes = () => {
     ${noteCats().includes(UI.noteCat) ? `<button class="btn btn-danger sm" data-act="delNoteCat" data-val="${esc(UI.noteCat)}">${icon('trash', 14)} Delete “${esc(UI.noteCat)}”</button>` : ''}
   </div>
   ${list.length ? list.map(n => `<div class="card tap" data-act="edit" data-type="notes" data-id="${n.id}">
-    <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
+    <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="row" style="gap:6px;flex-wrap:wrap"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>${noteRemindChip(n)}</span>
       <button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" aria-label="Pin">${icon('pin', 17)}</button></div>
     <b style="font-size:16.5px;letter-spacing:-.01em">${highlight(n.title, q)}</b>
     <div class="prose${noteProgress(n) ? '' : ' clamp'}" style="margin-top:7px;font-size:15px">${richText(n.content, n.id)}</div>
