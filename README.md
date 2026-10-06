@@ -85,6 +85,13 @@ quick-log buttons on the Home screen.
 
 ---
 
+## Signing in on a new device
+
+Open the app and tap **Sign in with Gmail**. Your Apps Script emails you a **Yes, it's me** button (with a
+two-digit code that matches the screen); tap it and the device connects itself — no Web App URL, secret
+or token to type. Only someone who can read your Gmail can approve, and only the device that asked can
+collect the connection. Needs Apps Script v18 or later, and its address in `connect-config.js`.
+
 ## Syncing
 
 There are two independent sync paths. Use either or both.

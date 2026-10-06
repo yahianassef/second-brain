@@ -1,6 +1,8 @@
 /**
  * Second Brain — Google Sheets sync API
  * =====================================
+ * v18 — Sign in with Gmail: a new device is connected by tapping a button in an
+ *      email, so nothing needs typing on a phone.
  * v17 — a reminder set on a note arrives on the phone at that time, checked every
  *      five minutes. The schedule for it sets itself up on its first hourly run.
  * v16 — reminders straight to an iPhone with no app to install: add the site to
@@ -121,6 +123,13 @@ function handleInner(e, body) {
   var action = body.action || p.action || 'pull';
   var secret = body.secret || p.secret || '';
 
+  // Signing in is how a device gets the secret, so it cannot need it
+  if (action === 'signinStart' || action === 'signinApprove' || action === 'signinClaim') {
+    try {
+      var fn = { signinStart: signinStart, signinApprove: signinApprove, signinClaim: signinClaim }[action];
+      return json({ ok: true, result: fn(body.nonce ? body : p) });
+    } catch (err) { return json({ ok: false, error: String(err && err.message ? err.message : err) }); }
+  }
   // A phone reading its own reminders carries its own device token, not the secret
   if (action === 'pushInbox') {
     try { return json({ ok: true, result: pushInboxRead(body.token || p.token, body.since || p.since) }); }
@@ -133,7 +142,7 @@ function handleInner(e, body) {
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 17 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 18 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -2041,6 +2050,83 @@ function pushSend(title, body) {
   if (gone.length) savePushSubs(subs.filter(function (s) { return gone.indexOf(s.endpoint) < 0; }));
   if (!ok) throw new Error(errors.length ? 'The phone did not accept it — ' + errors.join('; ') : 'That phone has turned notifications off; turn them on again in the app');
   return 'phone:' + ok + (ok === 1 ? ' device' : ' devices');
+}
+
+/* ============================================================
+   SIGN IN WITH GMAIL — connect a new device without typing anything
+
+   The app on a new phone asks to be let in. This emails you (the account the
+   script runs as) a "Yes, it's me" button. Tapping it in Gmail approves that
+   one request, and the phone, which has been waiting, is handed the
+   connection. Only someone who can read your Gmail can approve, and only the
+   phone that asked can collect: it proves itself with a secret it never sent.
+   ============================================================ */
+
+var SIGNIN_KEY = 'secondBrainSignin';
+var SIGNIN_SITE = 'https://yahianassef.github.io/second-brain/';
+var SIGNIN_TTL = 15 * 60000;
+
+function signinPending() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(SIGNIN_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function saveSigninPending(p) {
+  var now = Date.now(), keep = {};
+  Object.keys(p).forEach(function (k) { if (now - p[k].ts < SIGNIN_TTL) keep[k] = p[k]; });
+  PropertiesService.getScriptProperties().setProperty(SIGNIN_KEY, JSON.stringify(keep));
+}
+function signinSig(nonce) { return pushHex(pushHmac(pushUtf8(CONFIG.SECRET), pushUtf8('signin:' + nonce))); }
+
+/** A device asks to be let in: remember the request and email the approve button. */
+function signinStart(body) {
+  var nonce = String(body.nonce || ''), check = String(body.check || '');
+  if (!/^[a-f0-9]{32}$/.test(nonce) || !/^[a-f0-9]{64}$/.test(check)) throw new Error('Bad sign-in request');
+  var p = signinPending(), now = Date.now();
+  var recent = Object.keys(p).filter(function (k) { return now - p[k].ts < 60000; }).length;
+  if (recent >= 3) throw new Error('Too many sign-in requests — wait a minute and try again');
+  var code = String(10 + (parseInt(nonce.slice(0, 4), 16) % 90));
+  var device = String(body.device || 'A device').replace(/[<>&"]/g, '').slice(0, 40);
+  p[nonce] = { check: check, device: device, code: code, ts: now, approved: false };
+  saveSigninPending(p);
+
+  var link = SIGNIN_SITE + 'm.html#approve=' + nonce + '.' + signinSig(nonce);
+  var when = Utilities.formatDate(new Date(now), Session.getScriptTimeZone(), 'HH:mm');
+  MailApp.sendEmail({
+    to: Session.getEffectiveUser().getEmail(),
+    subject: 'Second Brain — sign in on your ' + device + ' (code ' + code + ')',
+    body: 'Your ' + device + ' asked to sign in to Second Brain at ' + when + '. Code ' + code + '.\n\n'
+      + 'If that was you, open this link: ' + link + '\n\nIf it was not you, ignore this email. Nothing happens unless you approve.',
+    htmlBody: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:16px;line-height:1.5;color:#111">'
+      + '<p>Your <b>' + device + '</b> asked to sign in to Second Brain at ' + when + '.</p>'
+      + '<p style="font-size:28px;font-weight:700;letter-spacing:.08em;margin:12px 0">' + code + '</p>'
+      + '<p>If the same code is on your screen, tap:</p>'
+      + '<p><a href="' + link + '" style="display:inline-block;background:#0a84ff;color:#fff;text-decoration:none;font-weight:600;padding:14px 26px;border-radius:12px">Yes, it’s me — sign me in</a></p>'
+      + '<p style="color:#666;font-size:13px">Not you? Ignore this email. Nothing happens unless you approve. The request expires in 15 minutes.</p></div>'
+  });
+  return { code: code, sentTo: Session.getEffectiveUser().getEmail().replace(/^(.).*(@.*)$/, '$1•••$2') };
+}
+
+/** The "Yes, it's me" button, opened from the email. */
+function signinApprove(body) {
+  var nonce = String(body.nonce || ''), sig = String(body.sig || '');
+  var p = signinPending(), req = p[nonce];
+  if (!req || Date.now() - req.ts > SIGNIN_TTL) throw new Error('This sign-in link has expired. Ask again from the device.');
+  if (sig !== signinSig(nonce)) throw new Error('This sign-in link is not valid.');
+  req.approved = true;
+  saveSigninPending(p);
+  return { device: req.device, code: req.code };
+}
+
+/** The waiting device collecting its connection, once approved. */
+function signinClaim(body) {
+  var nonce = String(body.nonce || ''), proof = String(body.proof || '');
+  var p = signinPending(), req = p[nonce];
+  if (!req) return { status: 'expired' };
+  if (pushHex(pushSha(pushUtf8(proof))) !== req.check) throw new Error('Bad sign-in request');
+  if (!req.approved) return { status: 'waiting' };
+  delete p[nonce];
+  saveSigninPending(p);
+  return { status: 'approved', secret: CONFIG.SECRET };
 }
 
 /* ============================================================
