@@ -54,7 +54,11 @@ add on one device shows up on the others.
   the total, the net against spending, and a card breaking it down line by line with your notes
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
 - **Courses** — lessons completed, progress, deadlines, resources
-- **Notes** — categories, tags, pinning, markdown-ish formatting
+- **Notes** — write freely and keep a to-do list in the same note: real tick boxes in the editor (Enter adds
+  the next item, Backspace on an empty one removes it), tick or add items straight from the card, and a
+  **To-do lists** filter. Categories are your own, each with a lamp icon — add, rename or delete them (trash beside each one on desktop,
+  **Delete** on the phone), and a removed category's
+  notes move to the first one left. Pinning as before
 - **Notifications** — reminders on your phone for expense logging, journalling, tasks, habits,
   budgets, project and course status, study and exercise targets, credit cards and car service.
   Sent by the Apps Script on an hourly schedule, so they arrive with the app closed, through

@@ -7,7 +7,8 @@
    cache. This refetches the page and every script it loads with the cache
    deliberately bypassed, so the reload afterwards picks up the new files.
    ========================================================= */
-const UPDATE_FILES = ['theme.css', 'theme.js', 'assistant.js', 'cloud.js', 'cloud-ui.js', 'cloud-config.js'];
+const UPDATE_FILES = ['theme.css', 'update.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js',
+  'theme.js', 'assistant.js', 'cloud-config.js', 'cloud.js', 'cloud-ui.js'];
 
 const AppUpdate = {
   busy: false,
@@ -79,21 +80,33 @@ if (typeof ICONS !== 'undefined' && !ICONS.refresh) {
   ICONS.refresh = '<path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M20.5 4v5h-5"/>';
 }
 
-/* Say so when the copy on the phone is behind the one on the server — that is
-   precisely the moment someone is wondering why a change has not appeared.
-   Checked once, quietly, a few seconds after the app settles. */
-AppUpdate.announce = async function () {
-  if (sessionStorage.getItem('secondBrain.updateNoticed')) return;
-  const stale = await this.available();
-  if (!stale) return;
-  try { sessionStorage.setItem('secondBrain.updateNoticed', '1'); } catch (e) { /* private window */ }
+/* Every time the app opens or is refreshed, ask the server — past every cache —
+   whether it has a newer copy, and if so fetch it and reload straight away, so a
+   refresh always shows the latest change. Each newer copy is reloaded for at most
+   once: if the reload still comes back old (the host has not finished
+   publishing), it says so with an Update button instead of looping. */
+AppUpdate.autoUpdate = async function () {
+  const there = await this.latest(), here = this.current();
+  if (!there || !here || there.getTime() - here.getTime() <= 60000) return;
+  const KEY = 'secondBrain.autoUpdated', mark = String(there.getTime());
+  let tried = '';
+  try { tried = sessionStorage.getItem(KEY) || ''; } catch (e) { /* private window */ }
+  // Never pull the page out from under an open form; offer the update instead
+  const busy = document.querySelector('.overlay, .sheet.open');
+  if (tried !== mark && !busy) {
+    try { sessionStorage.setItem(KEY, mark); } catch (e) { /* private window */ }
+    return this.refresh();
+  }
   const line = document.getElementById('verLine');
   if (line) line.textContent = 'A newer version is ready — tap to get it';
   try {
     toast('A newer version is available', { action: 'Update', onAction: () => this.refresh() });
   } catch (e) { /* no toast on this build */ }
 };
+AppUpdate.announce = AppUpdate.autoUpdate;
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('load', () => setTimeout(() => AppUpdate.announce(), 4000));
+  // Straight away on open, and again whenever the app comes back to the front
+  window.addEventListener('load', () => AppUpdate.autoUpdate());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') AppUpdate.autoUpdate(); });
 }

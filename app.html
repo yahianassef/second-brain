@@ -11,7 +11,20 @@
 <meta name="apple-mobile-web-app-title" content="Second Brain">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#07090D">
-<link rel="stylesheet" href="theme.css">
+<script>
+  /* Every file is fetched under the page's own version, so a refresh that brings
+     a new page also brings its new scripts and styles, never yesterday's. */
+  window.APP_V = encodeURIComponent(document.lastModified || Date.now());
+  window.loadFiles = function (files) {
+    files.forEach(function (f) {
+      document.write(/\.css$/.test(f)
+        ? '<link rel="stylesheet" href="' + f + '?v=' + APP_V + '">'
+        : '<script src="' + f + '?v=' + APP_V + '"><\/script>');
+    });
+  };
+  loadFiles(['theme.css']);
+</script>
+<noscript><link rel="stylesheet" href="theme.css"></noscript>
 <script>
 /* Decide the theme before anything paints, or a light-mode device flashes dark.
    The full choice lives in your synced settings; this is the local mirror. */
@@ -470,6 +483,10 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6) sepia(1) h
 .side-btn:hover{background:var(--surface-2);color:var(--text)}
 .side-btn.on{background:rgba(var(--acc-rgb),.15);color:var(--text-hi)}
 .side-btn.on svg{color:var(--blue-2)}
+.side-row{position:relative}
+.side-row .side-del{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:26px;height:26px;opacity:0;transition:opacity .15s}
+.side-row:hover .side-del,.side-row .side-del:focus-visible{opacity:1}
+.side-row:hover .side-btn .n{visibility:hidden}
 .side-btn .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-3)}
 .side-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-3);font-weight:600;padding:14px 10px 6px}
 .tag-cloud{display:flex;flex-wrap:wrap;gap:6px;padding:0 4px}
@@ -485,9 +502,26 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6) sepia(1) h
   background:none;display:grid;place-items:center;color:transparent;cursor:pointer;padding:0}
 .chk-box.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff}
 .note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px;color:var(--text-3)}
+.cl-head{display:flex;align-items:center;gap:7px;margin:14px 0 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.cl-count{font-weight:500;color:var(--text-3)}
+.cl-list{display:flex;flex-direction:column;gap:6px}
+.cl-row{display:flex;align-items:center;gap:9px}
+.cl-row .chk-box{margin-top:0;color:transparent}
+.cl-row .chk-box.on{color:#fff}
+.cl-row .cl-text{flex:1;min-width:0}
+.cl-row.done .cl-text{color:var(--text-3);text-decoration:line-through}
+.cl-add{margin-top:8px}
+.cl-quick-wrap{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--text-3)}
+.cl-quick{flex:1;min-width:0;background:none;border:0;border-bottom:1px dashed var(--border);color:var(--text);font:inherit;padding:5px 0;outline:none}
+.cl-quick:focus{border-bottom-color:var(--blue)}
+.cat-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cat-row .input{flex:1;min-width:0}
+.cat-row .hint{white-space:nowrap}
+.cat-new{margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
 .note-progress .bar{flex:1;max-width:120px}
 .note-card .prose{font-size:13.5px;line-height:1.65;margin-top:6px;max-height:230px;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 75%,transparent);mask-image:linear-gradient(180deg,#000 75%,transparent)}
 .note-card .prose p,.note-card .prose ul{margin-bottom:8px}
+.note-card .prose.full{max-height:none;-webkit-mask-image:none;mask-image:none}
 .note-card .n-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 .note-card .n-foot .muted{margin-left:auto;font-size:11.5px}
 .note-card.pinned{border-color:rgba(var(--acc2-rgb),.28);background:linear-gradient(180deg,var(--card-pin),var(--card-2))}
@@ -915,15 +949,16 @@ const highlight = (text, q) => { const t = esc(text); if (!q) return t; const i 
 /** Minimal, safe rich text: **bold**, *italic*, `code`, "- " bullets, "# " headings, auto-links. */
 /** The note categories you actually use: the built-in list plus your own. */
 function noteCats() {
-  const mine = ((DB.settings || {}).noteCats || []).filter(Boolean);
-  return [...new Set([...LISTS.noteCats, ...mine])];
+  const s = (typeof DB !== 'undefined' && DB && DB.settings) || {};
+  const base = Array.isArray(s.noteCatList) && s.noteCatList.length ? s.noteCatList : [...LISTS.noteCats, ...(s.noteCats || [])];
+  const used = ((typeof DB !== 'undefined' && DB && DB.notes) || []).map(n => n.category);
+  return [...new Set([...base, ...used].map(c => String(c || '').trim()).filter(Boolean))];
 }
 function addNoteCat() {
   const name = (prompt('Name the new category') || '').trim();
   if (!name) return;
   if (noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { toast('That category already exists'); return; }
-  DB.settings.noteCats = [...((DB.settings || {}).noteCats || []), name];
-  DB.settings.ts = Date.now();
+  setNoteCats([...noteCats(), name]);
   saveDB();
   UI.noteCat = name;
   render();
@@ -957,6 +992,175 @@ function noteProgress(note) {
     if (m[1] !== ' ') done++;
   });
   return total ? { total, done } : null;
+}
+/* A note is free text plus a to-do list. The list is stored inside the text as
+   "- [ ] item" lines so it syncs like any note and stays readable as plain text,
+   but you never type that: the editor gives you boxes and rows instead. */
+const CHECK_LINE = /^\s*[-*]\s+\[([ xX])\]\s?(.*)$/;
+function splitNote(content) {
+  const text = [], items = [];
+  String(content || '').split('\n').forEach(l => {
+    const m = l.match(CHECK_LINE);
+    if (m) items.push({ done: m[1] !== ' ', text: m[2] }); else text.push(l);
+  });
+  return { text: text.join('\n').replace(/\n{3,}/g, '\n\n').trim(), items };
+}
+function joinNote(text, items) {
+  const list = items.filter(i => String(i.text).trim()).map(i => `- [${i.done ? 'x' : ' '}] ${String(i.text).trim()}`).join('\n');
+  return [String(text || '').trim(), list].filter(Boolean).join('\n\n');
+}
+/** Add one item to the end of a note's list, straight from its card. */
+function addNoteItem(id, text) {
+  const note = (DB.notes || []).find(n => n.id === id);
+  text = String(text || '').trim();
+  if (!note || !text) return;
+  const parts = splitNote(note.content);
+  parts.items.push({ done: false, text });
+  note.content = joinNote(parts.text, parts.items);
+  note.updated = today();
+  note.ts = Date.now();
+  saveDB();
+  render();
+  const again = document.querySelector(`.cl-quick[data-id="${id}"]`);
+  if (again) again.focus();
+}
+/** The quick "Add an item" line under a to-do list card. */
+const noteQuickAdd = n => `<div class="cl-quick-wrap">${icon('plus', 14)}<input class="cl-quick" data-act="noop" data-id="${n.id}" placeholder="Add an item…" aria-label="Add an item to ${esc(n.title)}" enterkeyhint="done"></div>`;
+
+const clRow = (it = { done: false, text: '' }) => `<div class="cl-row${it.done ? ' done' : ''}">
+  <button type="button" class="chk-box${it.done ? ' on' : ''}" data-cl-tick aria-pressed="${!!it.done}" aria-label="Done">${icon('check', 12, 3.4)}</button>
+  <input class="input cl-text" value="${esc(it.text)}" placeholder="To-do item" aria-label="To-do item" enterkeyhint="next">
+  <button type="button" class="icon-btn" data-cl-del aria-label="Remove item">${icon('x', 14)}</button></div>`;
+/** The note editor: a plain writing box and a to-do list with real boxes. */
+function noteEditorHTML(v, id) {
+  const { text, items } = splitNote(v);
+  return `<textarea class="input" id="${id}" name="content" rows="${items.length ? 5 : 9}" placeholder="Write anything…">${esc(text)}</textarea>
+    <div class="cl-head">${icon('tasks', 14)} To-do list<span class="cl-count"></span></div>
+    <div class="cl-list">${items.map(clRow).join('')}</div>
+    <button type="button" class="btn btn-ghost sm cl-add" data-cl-add>${icon('plus', 14)} Add item</button>`;
+}
+function readNoteEditor(form) {
+  const items = [...form.querySelectorAll('.cl-row')].map(r => ({ done: r.classList.contains('done'), text: r.querySelector('.cl-text').value }));
+  return joinNote(form.elements.content.value, items);
+}
+/** Makes the to-do rows in an open note form behave: tick, add, remove, Enter for the next one. */
+function wireNoteEditor(form) {
+  const list = form.querySelector('.cl-list');
+  if (!list) return;
+  const count = () => {
+    const rows = [...list.children], done = rows.filter(r => r.classList.contains('done')).length;
+    form.querySelector('.cl-count').textContent = rows.length ? ` · ${done}/${rows.length} done` : '';
+  };
+  const add = (after, focus = true) => {
+    const t = document.createElement('div');
+    t.innerHTML = clRow();
+    const row = t.firstElementChild;
+    after ? after.after(row) : list.appendChild(row);
+    if (focus) row.querySelector('.cl-text').focus();
+    count();
+    return row;
+  };
+  form.addEventListener('click', e => {
+    if (e.target.closest('[data-cl-add]')) { add(); return; }
+    const tick = e.target.closest('[data-cl-tick]');
+    if (tick) {
+      const row = tick.closest('.cl-row'), on = !row.classList.contains('done');
+      row.classList.toggle('done', on); tick.classList.toggle('on', on); tick.setAttribute('aria-pressed', on);
+      count(); return;
+    }
+    const del = e.target.closest('[data-cl-del]');
+    if (del) { del.closest('.cl-row').remove(); count(); }
+  });
+  // Runs before the form's own handler, so Enter in a row adds the next row instead of saving
+  form.addEventListener('keydown', e => {
+    if (!e.target.classList.contains('cl-text') || e.ctrlKey || e.metaKey) return;
+    const row = e.target.closest('.cl-row');
+    if (e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); add(row); }
+    else if (e.key === 'Backspace' && !e.target.value) {
+      e.preventDefault();
+      const prev = row.previousElementSibling;
+      row.remove(); count();
+      if (prev) { const i = prev.querySelector('.cl-text'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    }
+  }, true);
+  count();
+  return { add, list };
+}
+
+/* Categories are yours: rename them, remove them, add as many as you like. */
+function setNoteCats(list) {
+  DB.settings.noteCatList = list;
+  DB.settings.ts = Date.now();
+}
+function renameNoteCat(from, to) {
+  to = String(to || '').trim();
+  if (!to || to === from) return false;
+  if (noteCats().some(c => c !== from && c.toLowerCase() === to.toLowerCase())) { toast('That category already exists', { tone: 'error' }); return false; }
+  setNoteCats(noteCats().map(c => c === from ? to : c));
+  DB.notes.forEach(n => { if (n.category === from) { n.category = to; n.ts = Date.now(); } });
+  if (UI.noteCat === from) UI.noteCat = to;
+  saveDB();
+  return true;
+}
+function deleteNoteCat(name) {
+  const rest = noteCats().filter(c => c !== name);
+  const home = rest[0] || 'General';
+  setNoteCats(rest.length ? rest : [home]);
+  DB.notes.forEach(n => { if (n.category === name) { n.category = home; n.ts = Date.now(); } });
+  if (UI.noteCat === name) UI.noteCat = 'All';
+  saveDB();
+  return home;
+}
+/** Remove a category after asking; its notes move to the first one left. */
+function confirmDeleteNoteCat(name) {
+  const n = DB.notes.filter(x => x.category === name).length;
+  const home = noteCats().filter(c => c !== name)[0] || 'General';
+  confirmDialog(`Delete “${name}”?`, n ? `${plural(n, 'note')} in it will move to <b>${esc(home)}</b>. No note is deleted.` : 'It has no notes in it.', 'Delete category', () => {
+    deleteNoteCat(name); render(); toast(`Category “${name}” deleted`);
+  });
+}
+/** One place to add, rename and remove note categories. */
+function manageNoteCats() {
+  const used = c => DB.notes.filter(n => n.category === c).length;
+  const body = () => noteCats().map(c => `<div class="cat-row" data-cat="${esc(c)}">
+      <input class="input" value="${esc(c)}" aria-label="Category name">
+      <span class="hint">${plural(used(c), 'note')}</span>
+      <button type="button" class="icon-btn danger" data-cat-del aria-label="Delete ${esc(c)}">${icon('trash', 15)}</button></div>`).join('');
+  const m = openModal(`
+    <div class="modal-head"><div><div class="eyebrow">Notes</div><h3>Your categories</h3></div><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-body">
+      <div class="cat-list">${body()}</div>
+      <div class="cat-row cat-new"><input class="input" id="catNew" placeholder="New category…" aria-label="New category"><button type="button" class="btn btn-primary sm" data-cat-add>${icon('plus', 14)} Add</button></div>
+      <p class="hint" style="margin-top:12px">Rename a category by typing over it. Deleting one moves its notes to the first category left — no note is deleted.</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" data-close>${icon('check', 15)} Done</button></div>`, false, 'small');
+  const refresh = () => { $('.cat-list', m).innerHTML = body(); render(); };
+  const addNew = () => {
+    const inp = $('#catNew', m), name = inp.value.trim();
+    if (!name) return;
+    if (noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { toast('That category already exists', { tone: 'error' }); return; }
+    setNoteCats([...noteCats(), name]); saveDB();
+    inp.value = ''; refresh(); inp.focus();
+  };
+  m.addEventListener('click', e => {
+    if (e.target.closest('[data-cat-add]')) { addNew(); return; }
+    const del = e.target.closest('[data-cat-del]');
+    if (!del) return;
+    const name = del.closest('.cat-row').dataset.cat, n = used(name);
+    const home = deleteNoteCat(name);
+    refresh();
+    toast(n ? `“${name}” removed — ${plural(n, 'note')} moved to ${home}` : `“${name}” removed`);
+  });
+  m.addEventListener('change', e => {
+    const row = e.target.closest('.cat-row[data-cat]');
+    if (!row) return;
+    if (renameNoteCat(row.dataset.cat, e.target.value)) refresh(); else e.target.value = row.dataset.cat;
+  });
+  m.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (e.target.id === 'catNew') addNew(); else e.target.blur();
+  });
 }
 function richText(src, noteId) {
   const inline = s => s
@@ -1031,7 +1235,8 @@ const ICONS = {
   trend: '<path d="m3 17 6-6 4 4 8-8M15 7h6v6"/>',
   smile: '<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1.8 2 5.2 2 7 0M9 9.5h.01M15 9.5h.01"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
-  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+  hash: '<path d="M9 18h6M10 22h4"/><path d="M15.1 14c.2-1 .7-1.7 1.4-2.5A4.7 4.7 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.4 2.5"/>',
+  bulb: '<path d="M9 18h6M10 22h4"/><path d="M15.1 14c.2-1 .7-1.7 1.4-2.5A4.7 4.7 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.4 2.5"/>',
   play: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5.5 3.5-5.5 3.5z"/>',
   sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
   cloud: '<path d="M7.5 19h9a4 4 0 0 0 .4-8A5.5 5.5 0 0 0 6.3 9.6 3.8 3.8 0 0 0 7.5 19z"/><path d="M12 15.5V9m0 0-2.2 2.2M12 9l2.2 2.2"/>',
@@ -1170,11 +1375,11 @@ function seedDB() {
   const N = (title, category, tags, pinned, content, ageDays) => base({ title, category, tags, pinned, content, created: d(-ageDays - 5), updated: d(-ageDays), ts: now - ageDays * 86400e3 - (tick++) * 1000 });
   db.notes = [
     N('Newsletter idea: Notes to Self', 'Ideas', ['writing', 'side-project'], true, 'A monthly email sharing the best things I learned.\n\n- 3 links worth reading\n- 1 tool I actually use\n- 1 lesson from the month\n\nStart small: write **5 issues** before judging it.', 3),
-    N('Weekly review checklist', 'Reference', ['routine', 'productivity'], true, '# Every Sunday\n- Clear inbox and capture loose tasks\n- Review calendar for the next 2 weeks\n- Update project progress\n- Check budget vs. actual\n- Write a short journal reflection', 9),
+    N('Weekly review checklist', 'Reference', ['routine', 'productivity'], true, 'Every Sunday, in this order.\n\n- [x] Clear inbox and capture loose tasks\n- [x] Review calendar for the next 2 weeks\n- [ ] Update project progress\n- [ ] Check budget vs. actual\n- [ ] Write a short journal reflection', 9),
     N('Q4 report — kickoff notes', 'Meeting', ['work', 'q4'], false, 'Stakeholders want a **one-page summary** up front.\n- Focus on retention and CAC trends\n- Draft due before the review meeting\n- Data source: analytics dashboard export', 6),
     N('Closures in one sentence', 'Learning', ['javascript', 'course'], false, 'A closure is a function bundled with the variables from the scope where it was created — it *remembers* them even after that scope is gone.\n\nUse cases: private state, factories, memoization.', 2),
     N('Reading list', 'Personal', ['books'], false, '- Deep Work\n- The Psychology of Money\n- Atomic Habits (re-read)\n- Thinking in Systems', 14),
-    N('Home office shopping list', 'Personal', ['home'], false, '- Monitor arm\n- Cable tray\n- Desk lamp with warm light\n- A plant for the shelf', 5),
+    N('Home office shopping list', 'Personal', ['home'], false, '- [x] Monitor arm\n- [ ] Cable tray\n- [ ] Desk lamp with warm light\n- [ ] A plant for the shelf', 5),
     N('Useful links', 'Reference', ['links', 'dev'], false, 'MDN Web Docs: https://developer.mozilla.org\nContrast checker: https://webaim.org/resources/contrastchecker/', 20)
   ];
 
@@ -1306,8 +1511,8 @@ const FORMS = {
 
   notes: { noun: 'Note', wide: true, fields: [
     { k: 'title', l: 'Title', t: 'text', req: true, full: true },
-    { k: 'category', l: 'Category', t: 'select', o: () => noteCats(), def: 'Ideas' },
-    { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.\nStart a line with - [ ] to make something you can tick off.' },
+    { k: 'category', l: 'Category', t: 'select', o: () => [...noteCats(), { v: '__new', l: '+ New category…' }], def: () => noteCats()[0] || 'Ideas' },
+    { k: 'content', l: 'Note', t: 'note', full: true },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
   ] },
 
@@ -1354,6 +1559,7 @@ function fieldHTML(f, vals) {
     case 'select': c = `<select class="select" id="${id}" name="${f.k}">${optionsHTML(f, vals)}</select>`; break;
     case 'range': c = `<div class="range-wrap"><input type="range" id="${id}" name="${f.k}" min="0" max="100" step="5" value="${num(v)}" style="--p:${num(v)}%"><output>${num(v)}%</output></div>`; break;
     case 'mood': c = `<div class="mood-pick">${LISTS.moods.map((m, i) => `<button type="button" data-mood="${i + 1}" class="${num(v) === i + 1 ? 'on' : ''}" style="--c:${MOOD_COLORS[i]}"><span class="dot" style="background:${MOOD_COLORS[i]}"></span>${m}</button>`).join('')}<input type="hidden" name="${f.k}" value="${esc(v)}"></div>`; break;
+    case 'note': c = noteEditorHTML(v, id); break;
     case 'check': c = `<label class="toggle"><input type="checkbox" id="${id}" name="${f.k}"${v ? ' checked' : ''}><span></span>${esc(f.cl || '')}</label>`; break;
     case 'tags': c = `<input class="input" id="${id}" name="${f.k}" value="${esc((v || []).join(', '))}" placeholder="${esc(f.ph || '')}">`; break;
     default: c = `<input class="input" id="${id}" type="${f.t}" name="${f.k}" value="${esc(v)}"${f.min != null ? ` min="${f.min}"` : ''}${f.step ? ` step="${f.step}"` : ''} placeholder="${esc(f.ph || '')}">`;
@@ -1365,7 +1571,8 @@ function readForm(form, cfg) {
   cfg.fields.forEach(f => {
     const el = form.elements[f.k]; if (!el) return;
     let v = f.t === 'check' ? el.checked : el.value;
-    if (f.t === 'tags') v = v.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
+    if (f.t === 'note') v = readNoteEditor(form);
+    else if (f.t === 'tags') v = v.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
     else if (['number', 'range', 'mood'].includes(f.t)) v = v === '' ? '' : Number(v);
     else if (typeof v === 'string') v = v.trim();
     o[f.k] = v;
@@ -1393,8 +1600,17 @@ function openForm(type, item = null, preset = {}) {
       <button class="btn btn-primary" data-save>${icon('check', 15)} ${item ? 'Save changes' : 'Create ' + cfg.noun.toLowerCase()}</button>
     </div>`, cfg.wide);
   const form = $('form', m);
+  wireNoteEditor(form);
 
   form.addEventListener('change', e => {
+    if (e.target.name === 'category' && e.target.value === '__new') {
+      const name = (prompt('Name the new category') || '').trim();
+      const sel = e.target, keep = sel.dataset.prev || noteCats()[0];
+      if (name && !noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { setNoteCats([...noteCats(), name]); saveDB(); }
+      const pick = name ? (noteCats().find(c => c.toLowerCase() === name.toLowerCase()) || keep) : keep;
+      sel.innerHTML = optionsHTML(cfg.fields.find(f => f.k === 'category'), { category: pick });
+    }
+    if (e.target.name === 'category') e.target.dataset.prev = e.target.value;
     cfg.fields.filter(f => f.dep === e.target.name).forEach(f => { form.elements[f.k].innerHTML = optionsHTML(f, readForm(form, cfg)); });
   });
   form.addEventListener('input', e => {
@@ -1937,7 +2153,7 @@ RENDER.dashboard = () => {
     </div>` : ''}
     <div class="card span-12">
       ${cardHead('note', 'Recent notes', `<button class="link-btn" data-act="go" data-val="notes">All notes ${icon('arrowR', 13)}</button>`)}
-      ${notes.length ? `<div class="note-strip">${notes.map(n => `<div class="note-mini" data-act="edit" data-type="notes" data-id="${n.id}"><h5>${n.pinned ? `<span class="txt-blue">${icon('pin', 13)}</span> ` : ''}${esc(n.title)}</h5><p>${esc(String(n.content || '').replace(/^#+\s*/gm, '').replace(/\*\*/g, ''))}</p></div>`).join('')}</div>` : emptyState('note', 'No notes yet', 'Capture ideas and references as they come.', '', true)}
+      ${notes.length ? `<div class="note-strip">${notes.map(n => `<div class="note-mini" data-act="edit" data-type="notes" data-id="${n.id}"><h5>${n.pinned ? `<span class="txt-blue">${icon('pin', 13)}</span> ` : ''}${esc(n.title)}</h5><p>${esc(String(n.content || '').replace(/^#+\s*/gm, '').replace(/^\s*[-*]\s+\[[ xX]\]\s?/gm, '☐ ').replace(/\*\*/g, ''))}</p></div>`).join('')}</div>` : emptyState('note', 'No notes yet', 'Capture ideas and references as they come.', '', true)}
     </div>
   </section>`;
 };
@@ -2655,7 +2871,7 @@ RENDER.notes = () => {
       : UI.noteCat === 'Lists' ? !!noteProgress(n) : n.category === UI.noteCat)) &&
     (!q || [n.title, n.content, n.category].join(' ').toLowerCase().includes(q))
   ).sort((a, b) => (b.pinned - a.pinned) || num(b.ts) - num(a.ts));
-  const side = (val, ic, label, n) => `<button class="side-btn${UI.noteCat === val ? ' on' : ''}" data-act="set" data-key="noteCat" data-val="${val}">${icon(ic, 15)}${label}<span class="n">${n}</span></button>`;
+  const side = (val, ic, label, n) => `<button class="side-btn${UI.noteCat === val ? ' on' : ''}" data-act="set" data-key="noteCat" data-val="${esc(val)}">${icon(ic, 15)}${label}<span class="n">${n}</span></button>`;
   return `
   <div class="notes-layout">
     <aside class="card notes-side">
@@ -2664,8 +2880,9 @@ RENDER.notes = () => {
       ${side('Pinned', 'pin', 'Pinned', DB.notes.filter(n => n.pinned).length)}
       ${side('Lists', 'tasks', 'To-do lists', DB.notes.filter(n => noteProgress(n)).length)}
       <div class="side-label">Categories</div>
-      ${noteCats().map(c => side(c, 'hash', c, DB.notes.filter(n => n.category === c).length)).join('')}
+      ${noteCats().map(c => `<div class="side-row">${side(c, 'bulb', esc(c), DB.notes.filter(n => n.category === c).length)}<button class="icon-btn danger side-del" data-act="delNoteCat" data-val="${esc(c)}" title="Delete category" aria-label="Delete ${esc(c)}">${icon('trash', 14)}</button></div>`).join('')}
       <button class="side-btn" data-act="addNoteCat">${icon('plus', 15)}New category</button>
+      <button class="side-btn" data-act="manageNoteCats">${icon('edit', 15)}Rename or delete</button>
       <div style="margin-top:16px"><button class="btn btn-ghost sm" style="width:100%" data-act="exportCSV" data-val="Notes">${icon('download', 14)} Export CSV</button></div>
     </aside>
     <div>
@@ -2679,8 +2896,8 @@ RENDER.notes = () => {
         <div class="p-top"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
           <div class="hover-actions" style="opacity:1"><button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" title="${n.pinned ? 'Unpin' : 'Pin'}">${icon('pin', 15)}</button><button class="icon-btn danger" data-act="del" data-type="notes" data-id="${n.id}" title="Delete note">${icon('trash', 15)}</button></div></div>
         <h4>${highlight(n.title, q)}</h4>
-        <div class="prose">${richText(n.content, n.id) || '<p class="muted">Empty note</p>'}</div>
-        ${(() => { const p = noteProgress(n); return p ? `<div class="note-progress">${p.done}/${p.total} done<div class="bar ${p.done === p.total ? 'green' : ''}"><i style="width:${Math.round(p.done / p.total * 100)}%"></i></div></div>` : ''; })()}
+        <div class="prose${noteProgress(n) ? ' full' : ''}">${richText(n.content, n.id) || '<p class="muted">Empty note</p>'}</div>
+        ${(() => { const p = noteProgress(n); return p ? `<div class="note-progress">${p.done}/${p.total} done<div class="bar ${p.done === p.total ? 'green' : ''}"><i style="width:${Math.round(p.done / p.total * 100)}%"></i></div></div>` + noteQuickAdd(n) : ''; })()}
         <div class="n-foot"><span class="muted">Edited ${ago(n.updated).toLowerCase()}</span></div>
       </article>`).join('')}</div>` : `<div class="card">${emptyState('note', DB.notes.length ? 'No notes match' : 'No notes yet', DB.notes.length ? 'Try another category or search.' : 'Capture ideas, references and meeting notes.', addBtn('notes', 'New note'))}</div>`}
     </div>
@@ -4589,7 +4806,9 @@ const ACTIONS = {
   openJournal: el => { UI.journalSel = el.dataset.id; UI.journalQuery = ''; go('journal'); },
   noteCheck: (el, e) => { if (e) e.stopPropagation(); toggleNoteCheck(el.dataset.id, el.dataset.i); },
   addNoteCat: () => addNoteCat(),
-  newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned'].includes(UI.noteCat) ? UI.noteCat : 'Ideas' }),
+  newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned', 'Lists'].includes(UI.noteCat) ? UI.noteCat : noteCats()[0] }),
+  manageNoteCats: () => manageNoteCats(),
+  delNoteCat: (el, e) => { if (e) e.stopPropagation(); confirmDeleteNoteCat(el.dataset.val); },
   pinNote: el => { const n = find('notes', el.dataset.id); if (!n) return; n.pinned = !n.pinned; saveDB(); render(); toast(n.pinned ? 'Note pinned' : 'Note unpinned'); },
   noteTag: el => { UI.noteTag = UI.noteTag === el.dataset.val ? '' : el.dataset.val; render(); },
   clearNoteFilters: () => { UI.noteTag = ''; UI.noteQuery = ''; render(); },
@@ -4633,7 +4852,7 @@ function wireView() {
   view.addEventListener('click', e => {
     const el = e.target.closest('[data-act]');
     if (!el || !view.contains(el)) return;
-    if (el.tagName === 'A') return; // let links open normally
+    if (el.tagName === 'A' || el.tagName === 'INPUT') return; // let links open and inputs take focus
     e.preventDefault();
     ACTIONS[el.dataset.act]?.(el, e);
   });
@@ -4641,6 +4860,7 @@ function wireView() {
   view.addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.id === 'captureInput') { e.preventDefault(); ACTIONS.capture(); return; }
     if (e.key === 'Enter' && e.target.id === 'qaTitle') { e.preventDefault(); ACTIONS.quickTask(); return; }
+    if (e.key === 'Enter' && e.target.classList.contains('cl-quick')) { e.preventDefault(); addNoteItem(e.target.dataset.id, e.target.value); return; }
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[tabindex="0"][data-act]')) { e.preventDefault(); ACTIONS[e.target.dataset.act]?.(e.target, e); }
   });
   view.addEventListener('change', e => {
@@ -4924,17 +5144,8 @@ function hydrateStaticIcons() {
 <!-- Cloud mode: accounts + per-user database. Inert unless cloud-config.js
      carries real values, which only the public deployment does. -->
 <!-- Assistant: say or type it, your Apps Script turns it into a record. -->
-<script src="update.js"></script>
-<script src="motion.js"></script>
-<script src="gym-data.js"></script>
-<script src="gym.js"></script>
-<script src="gym-make.js"></script>
-<script src="graph.js"></script>
-<script src="polish.js"></script>
-<script src="theme.js"></script>
-<script src="assistant.js"></script>
+<script>loadFiles(['update.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js', 'theme.js', 'assistant.js']);</script>
 <script src="cloud-config.js"></script>
-<script src="cloud.js"></script>
-<script src="cloud-ui.js"></script>
+<script>loadFiles(['cloud.js', 'cloud-ui.js']);</script>
 </body>
 </html>
