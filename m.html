@@ -243,6 +243,23 @@ button.item:active{opacity:.6}
   background:none;display:grid;place-items:center;color:transparent;cursor:pointer;padding:0}
 .chk-box.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff}
 .note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--text-3)}
+.cl-head{display:flex;align-items:center;gap:7px;margin:14px 0 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.cl-count{font-weight:500;color:var(--text-3)}
+.cl-list{display:flex;flex-direction:column;gap:6px}
+.cl-row{display:flex;align-items:center;gap:9px}
+.cl-quick{font-size:16px}
+.cl-row .chk-box{margin-top:0;color:transparent}
+.cl-row .chk-box.on{color:#fff}
+.cl-row .cl-text{flex:1;min-width:0}
+.cl-row.done .cl-text{color:var(--text-3);text-decoration:line-through}
+.cl-add{margin-top:8px}
+.cl-quick-wrap{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--text-3)}
+.cl-quick{flex:1;min-width:0;background:none;border:0;border-bottom:1px dashed var(--border);color:var(--text);font:inherit;padding:5px 0;outline:none}
+.cl-quick:focus{border-bottom-color:var(--blue)}
+.cat-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cat-row .input{flex:1;min-width:0}
+.cat-row .hint{white-space:nowrap}
+.cat-new{margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
 .note-progress .bar{flex:1;max-width:120px}
 .prose{font-size:16px;line-height:1.75;color:var(--prose)}
 .prose p{margin:0 0 12px}
@@ -596,15 +613,16 @@ const highlight = (text, q) => { const t = esc(text); if (!q) return t; const i 
 /** Minimal, safe rich text: **bold**, *italic*, `code`, "- " bullets, "# " headings, auto-links. */
 /** The note categories you actually use: the built-in list plus your own. */
 function noteCats() {
-  const mine = ((DB.settings || {}).noteCats || []).filter(Boolean);
-  return [...new Set([...LISTS.noteCats, ...mine])];
+  const s = (typeof DB !== 'undefined' && DB && DB.settings) || {};
+  const base = Array.isArray(s.noteCatList) && s.noteCatList.length ? s.noteCatList : [...LISTS.noteCats, ...(s.noteCats || [])];
+  const used = ((typeof DB !== 'undefined' && DB && DB.notes) || []).map(n => n.category);
+  return [...new Set([...base, ...used].map(c => String(c || '').trim()).filter(Boolean))];
 }
 function addNoteCat() {
   const name = (prompt('Name the new category') || '').trim();
   if (!name) return;
   if (noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { toast('That category already exists'); return; }
-  DB.settings.noteCats = [...((DB.settings || {}).noteCats || []), name];
-  DB.settings.ts = Date.now();
+  setNoteCats([...noteCats(), name]);
   saveDB();
   UI.noteCat = name;
   render();
@@ -638,6 +656,167 @@ function noteProgress(note) {
     if (m[1] !== ' ') done++;
   });
   return total ? { total, done } : null;
+}
+/* A note is free text plus a to-do list. The list is stored inside the text as
+   "- [ ] item" lines so it syncs like any note and stays readable as plain text,
+   but you never type that: the editor gives you boxes and rows instead. */
+const CHECK_LINE = /^\s*[-*]\s+\[([ xX])\]\s?(.*)$/;
+function splitNote(content) {
+  const text = [], items = [];
+  String(content || '').split('\n').forEach(l => {
+    const m = l.match(CHECK_LINE);
+    if (m) items.push({ done: m[1] !== ' ', text: m[2] }); else text.push(l);
+  });
+  return { text: text.join('\n').replace(/\n{3,}/g, '\n\n').trim(), items };
+}
+function joinNote(text, items) {
+  const list = items.filter(i => String(i.text).trim()).map(i => `- [${i.done ? 'x' : ' '}] ${String(i.text).trim()}`).join('\n');
+  return [String(text || '').trim(), list].filter(Boolean).join('\n\n');
+}
+/** Add one item to the end of a note's list, straight from its card. */
+function addNoteItem(id, text) {
+  const note = (DB.notes || []).find(n => n.id === id);
+  text = String(text || '').trim();
+  if (!note || !text) return;
+  const parts = splitNote(note.content);
+  parts.items.push({ done: false, text });
+  note.content = joinNote(parts.text, parts.items);
+  note.updated = today();
+  note.ts = Date.now();
+  saveDB();
+  render();
+  const again = document.querySelector(`.cl-quick[data-id="${id}"]`);
+  if (again) again.focus();
+}
+/** The quick "Add an item" line under a to-do list card. */
+const noteQuickAdd = n => `<div class="cl-quick-wrap">${icon('plus', 14)}<input class="cl-quick" data-act="noop" data-id="${n.id}" placeholder="Add an item…" aria-label="Add an item to ${esc(n.title)}" enterkeyhint="done"></div>`;
+
+const clRow = (it = { done: false, text: '' }) => `<div class="cl-row${it.done ? ' done' : ''}">
+  <button type="button" class="chk-box${it.done ? ' on' : ''}" data-cl-tick aria-pressed="${!!it.done}" aria-label="Done">${icon('check', 12, 3.4)}</button>
+  <input class="input cl-text" value="${esc(it.text)}" placeholder="To-do item" aria-label="To-do item" enterkeyhint="next">
+  <button type="button" class="icon-btn" data-cl-del aria-label="Remove item">${icon('x', 14)}</button></div>`;
+/** The note editor: a plain writing box and a to-do list with real boxes. */
+function noteEditorHTML(v, id) {
+  const { text, items } = splitNote(v);
+  return `<textarea class="input" id="${id}" name="content" rows="${items.length ? 5 : 9}" placeholder="Write anything…">${esc(text)}</textarea>
+    <div class="cl-head">${icon('tasks', 14)} To-do list<span class="cl-count"></span></div>
+    <div class="cl-list">${items.map(clRow).join('')}</div>
+    <button type="button" class="btn btn-ghost sm cl-add" data-cl-add>${icon('plus', 14)} Add item</button>`;
+}
+function readNoteEditor(form) {
+  const items = [...form.querySelectorAll('.cl-row')].map(r => ({ done: r.classList.contains('done'), text: r.querySelector('.cl-text').value }));
+  return joinNote(form.elements.content.value, items);
+}
+/** Makes the to-do rows in an open note form behave: tick, add, remove, Enter for the next one. */
+function wireNoteEditor(form) {
+  const list = form.querySelector('.cl-list');
+  if (!list) return;
+  const count = () => {
+    const rows = [...list.children], done = rows.filter(r => r.classList.contains('done')).length;
+    form.querySelector('.cl-count').textContent = rows.length ? ` · ${done}/${rows.length} done` : '';
+  };
+  const add = (after, focus = true) => {
+    const t = document.createElement('div');
+    t.innerHTML = clRow();
+    const row = t.firstElementChild;
+    after ? after.after(row) : list.appendChild(row);
+    if (focus) row.querySelector('.cl-text').focus();
+    count();
+    return row;
+  };
+  form.addEventListener('click', e => {
+    if (e.target.closest('[data-cl-add]')) { add(); return; }
+    const tick = e.target.closest('[data-cl-tick]');
+    if (tick) {
+      const row = tick.closest('.cl-row'), on = !row.classList.contains('done');
+      row.classList.toggle('done', on); tick.classList.toggle('on', on); tick.setAttribute('aria-pressed', on);
+      count(); return;
+    }
+    const del = e.target.closest('[data-cl-del]');
+    if (del) { del.closest('.cl-row').remove(); count(); }
+  });
+  // Runs before the form's own handler, so Enter in a row adds the next row instead of saving
+  form.addEventListener('keydown', e => {
+    if (!e.target.classList.contains('cl-text') || e.ctrlKey || e.metaKey) return;
+    const row = e.target.closest('.cl-row');
+    if (e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); add(row); }
+    else if (e.key === 'Backspace' && !e.target.value) {
+      e.preventDefault();
+      const prev = row.previousElementSibling;
+      row.remove(); count();
+      if (prev) { const i = prev.querySelector('.cl-text'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    }
+  }, true);
+  count();
+  return { add, list };
+}
+
+/* Categories are yours: rename them, remove them, add as many as you like. */
+function setNoteCats(list) {
+  DB.settings.noteCatList = list;
+  DB.settings.ts = Date.now();
+}
+function renameNoteCat(from, to) {
+  to = String(to || '').trim();
+  if (!to || to === from) return false;
+  if (noteCats().some(c => c !== from && c.toLowerCase() === to.toLowerCase())) { toast('That category already exists', { tone: 'error' }); return false; }
+  setNoteCats(noteCats().map(c => c === from ? to : c));
+  DB.notes.forEach(n => { if (n.category === from) { n.category = to; n.ts = Date.now(); } });
+  if (UI.noteCat === from) UI.noteCat = to;
+  saveDB();
+  return true;
+}
+function deleteNoteCat(name) {
+  const rest = noteCats().filter(c => c !== name);
+  const home = rest[0] || 'General';
+  setNoteCats(rest.length ? rest : [home]);
+  DB.notes.forEach(n => { if (n.category === name) { n.category = home; n.ts = Date.now(); } });
+  if (UI.noteCat === name) UI.noteCat = 'All';
+  saveDB();
+  return home;
+}
+/** One place to add, rename and remove note categories. */
+function manageNoteCats() {
+  const used = c => DB.notes.filter(n => n.category === c).length;
+  const body = () => noteCats().map(c => `<div class="cat-row" data-cat="${esc(c)}">
+      <input class="input" value="${esc(c)}" aria-label="Category name">
+      <span class="hint">${plural(used(c), 'note')}</span>
+      <button type="button" class="icon-btn danger" data-cat-del aria-label="Remove ${esc(c)}"${noteCats().length < 2 ? ' disabled' : ''}>${icon('trash', 15)}</button></div>`).join('');
+  const m = openModal(`
+    <div class="modal-head"><div><div class="eyebrow">Notes</div><h3>Your categories</h3></div><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-body">
+      <div class="cat-list">${body()}</div>
+      <div class="cat-row cat-new"><input class="input" id="catNew" placeholder="New category…" aria-label="New category"><button type="button" class="btn btn-primary sm" data-cat-add>${icon('plus', 14)} Add</button></div>
+      <p class="hint" style="margin-top:12px">Rename a category by typing over it. Removing one moves its notes to the first category left.</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" data-close>${icon('check', 15)} Done</button></div>`, false, 'small');
+  const refresh = () => { $('.cat-list', m).innerHTML = body(); render(); };
+  const addNew = () => {
+    const inp = $('#catNew', m), name = inp.value.trim();
+    if (!name) return;
+    if (noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { toast('That category already exists', { tone: 'error' }); return; }
+    setNoteCats([...noteCats(), name]); saveDB();
+    inp.value = ''; refresh(); inp.focus();
+  };
+  m.addEventListener('click', e => {
+    if (e.target.closest('[data-cat-add]')) { addNew(); return; }
+    const del = e.target.closest('[data-cat-del]');
+    if (!del) return;
+    const name = del.closest('.cat-row').dataset.cat, n = used(name);
+    const home = deleteNoteCat(name);
+    refresh();
+    toast(n ? `“${name}” removed — ${plural(n, 'note')} moved to ${home}` : `“${name}” removed`);
+  });
+  m.addEventListener('change', e => {
+    const row = e.target.closest('.cat-row[data-cat]');
+    if (!row) return;
+    if (renameNoteCat(row.dataset.cat, e.target.value)) refresh(); else e.target.value = row.dataset.cat;
+  });
+  m.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (e.target.id === 'catNew') addNew(); else e.target.blur();
+  });
 }
 function richText(src, noteId) {
   const inline = s => s
@@ -851,11 +1030,11 @@ function seedDB() {
   const N = (title, category, tags, pinned, content, ageDays) => base({ title, category, tags, pinned, content, created: d(-ageDays - 5), updated: d(-ageDays), ts: now - ageDays * 86400e3 - (tick++) * 1000 });
   db.notes = [
     N('Newsletter idea: Notes to Self', 'Ideas', ['writing', 'side-project'], true, 'A monthly email sharing the best things I learned.\n\n- 3 links worth reading\n- 1 tool I actually use\n- 1 lesson from the month\n\nStart small: write **5 issues** before judging it.', 3),
-    N('Weekly review checklist', 'Reference', ['routine', 'productivity'], true, '# Every Sunday\n- Clear inbox and capture loose tasks\n- Review calendar for the next 2 weeks\n- Update project progress\n- Check budget vs. actual\n- Write a short journal reflection', 9),
+    N('Weekly review checklist', 'Reference', ['routine', 'productivity'], true, 'Every Sunday, in this order.\n\n- [x] Clear inbox and capture loose tasks\n- [x] Review calendar for the next 2 weeks\n- [ ] Update project progress\n- [ ] Check budget vs. actual\n- [ ] Write a short journal reflection', 9),
     N('Q4 report — kickoff notes', 'Meeting', ['work', 'q4'], false, 'Stakeholders want a **one-page summary** up front.\n- Focus on retention and CAC trends\n- Draft due before the review meeting\n- Data source: analytics dashboard export', 6),
     N('Closures in one sentence', 'Learning', ['javascript', 'course'], false, 'A closure is a function bundled with the variables from the scope where it was created — it *remembers* them even after that scope is gone.\n\nUse cases: private state, factories, memoization.', 2),
     N('Reading list', 'Personal', ['books'], false, '- Deep Work\n- The Psychology of Money\n- Atomic Habits (re-read)\n- Thinking in Systems', 14),
-    N('Home office shopping list', 'Personal', ['home'], false, '- Monitor arm\n- Cable tray\n- Desk lamp with warm light\n- A plant for the shelf', 5),
+    N('Home office shopping list', 'Personal', ['home'], false, '- [x] Monitor arm\n- [ ] Cable tray\n- [ ] Desk lamp with warm light\n- [ ] A plant for the shelf', 5),
     N('Useful links', 'Reference', ['links', 'dev'], false, 'MDN Web Docs: https://developer.mozilla.org\nContrast checker: https://webaim.org/resources/contrastchecker/', 20)
   ];
 
@@ -987,8 +1166,8 @@ const FORMS = {
 
   notes: { noun: 'Note', wide: true, fields: [
     { k: 'title', l: 'Title', t: 'text', req: true, full: true },
-    { k: 'category', l: 'Category', t: 'select', o: () => noteCats(), def: 'Ideas' },
-    { k: 'content', l: 'Content', t: 'textarea', full: true, rows: 12, ph: 'Write freely. Supports - bullets, # headings, **bold**, `code` and links.\nStart a line with - [ ] to make something you can tick off.' },
+    { k: 'category', l: 'Category', t: 'select', o: () => [...noteCats(), { v: '__new', l: '+ New category…' }], def: () => noteCats()[0] || 'Ideas' },
+    { k: 'content', l: 'Note', t: 'note', full: true },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
   ] },
 
@@ -1035,6 +1214,7 @@ function fieldHTML(f, vals) {
     case 'select': c = `<select class="select" id="${id}" name="${f.k}">${optionsHTML(f, vals)}</select>`; break;
     case 'range': c = `<div class="range-wrap"><input type="range" id="${id}" name="${f.k}" min="0" max="100" step="5" value="${num(v)}" style="--p:${num(v)}%"><output>${num(v)}%</output></div>`; break;
     case 'mood': c = `<div class="mood-pick">${LISTS.moods.map((m, i) => `<button type="button" data-mood="${i + 1}" class="${num(v) === i + 1 ? 'on' : ''}" style="--c:${MOOD_COLORS[i]}"><span class="dot" style="background:${MOOD_COLORS[i]}"></span>${m}</button>`).join('')}<input type="hidden" name="${f.k}" value="${esc(v)}"></div>`; break;
+    case 'note': c = noteEditorHTML(v, id); break;
     case 'check': c = `<label class="toggle"><input type="checkbox" id="${id}" name="${f.k}"${v ? ' checked' : ''}><span></span>${esc(f.cl || '')}</label>`; break;
     case 'tags': c = `<input class="input" id="${id}" name="${f.k}" value="${esc((v || []).join(', '))}" placeholder="${esc(f.ph || '')}">`; break;
     default: c = `<input class="input" id="${id}" type="${f.t}" name="${f.k}" value="${esc(v)}"${f.min != null ? ` min="${f.min}"` : ''}${f.step ? ` step="${f.step}"` : ''} placeholder="${esc(f.ph || '')}">`;
@@ -1046,7 +1226,8 @@ function readForm(form, cfg) {
   cfg.fields.forEach(f => {
     const el = form.elements[f.k]; if (!el) return;
     let v = f.t === 'check' ? el.checked : el.value;
-    if (f.t === 'tags') v = v.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
+    if (f.t === 'note') v = readNoteEditor(form);
+    else if (f.t === 'tags') v = v.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
     else if (['number', 'range', 'mood'].includes(f.t)) v = v === '' ? '' : Number(v);
     else if (typeof v === 'string') v = v.trim();
     o[f.k] = v;
@@ -1074,8 +1255,17 @@ function openForm(type, item = null, preset = {}) {
       <button class="btn btn-primary" data-save>${icon('check', 15)} ${item ? 'Save changes' : 'Create ' + cfg.noun.toLowerCase()}</button>
     </div>`, cfg.wide);
   const form = $('form', m);
+  wireNoteEditor(form);
 
   form.addEventListener('change', e => {
+    if (e.target.name === 'category' && e.target.value === '__new') {
+      const name = (prompt('Name the new category') || '').trim();
+      const sel = e.target, keep = sel.dataset.prev || noteCats()[0];
+      if (name && !noteCats().some(c => c.toLowerCase() === name.toLowerCase())) { setNoteCats([...noteCats(), name]); saveDB(); }
+      const pick = name ? (noteCats().find(c => c.toLowerCase() === name.toLowerCase()) || keep) : keep;
+      sel.innerHTML = optionsHTML(cfg.fields.find(f => f.k === 'category'), { category: pick });
+    }
+    if (e.target.name === 'category') e.target.dataset.prev = e.target.value;
     cfg.fields.filter(f => f.dep === e.target.name).forEach(f => { form.elements[f.k].innerHTML = optionsHTML(f, readForm(form, cfg)); });
   });
   form.addEventListener('input', e => {
@@ -3056,7 +3246,7 @@ SCREENS.home = () => {
     </div>
     <div class="card tap" style="margin:0" ${note ? `data-act="edit" data-type="notes" data-id="${note.id}"` : 'data-act="add" data-type="notes"'}>
       <div class="card-title" style="margin-bottom:8px">${icon('note', 15)}Notes</div>
-      ${note ? `<div style="font-weight:700;font-size:15px;margin-bottom:4px">${esc(note.title)}</div><p class="hint clamp">${esc(String(note.content || '').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Capture an idea</p>'}
+      ${note ? `<div style="font-weight:700;font-size:15px;margin-bottom:4px">${esc(note.title)}</div><p class="hint clamp">${esc(String(note.content || '').replace(/^\s*[-*]\s+\[[ xX]\]\s?/gm, '☐ ').replace(/[*#]/g, ''))}</p>` : '<p class="hint">Capture an idea</p>'}
     </div>
   </div>`;
 };
@@ -3265,13 +3455,14 @@ SCREENS.notes = () => {
   <div class="row" style="gap:8px;margin:0 2px 10px">
     <button class="btn btn-ghost sm" data-act="newChecklist">${icon('tasks', 14)} New to-do list</button>
     <button class="btn btn-ghost sm" data-act="addNoteCat">${icon('plus', 14)} Category</button>
+    <button class="btn btn-ghost sm" data-act="manageNoteCats">${icon('edit', 14)} Edit categories</button>
   </div>
   ${list.length ? list.map(n => `<div class="card tap" data-act="edit" data-type="notes" data-id="${n.id}">
     <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
       <button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" aria-label="Pin">${icon('pin', 17)}</button></div>
     <b style="font-size:16.5px;letter-spacing:-.01em">${highlight(n.title, q)}</b>
     <div class="prose${noteProgress(n) ? '' : ' clamp'}" style="margin-top:7px;font-size:15px">${richText(n.content, n.id)}</div>
-    ${(() => { const p = noteProgress(n); return p ? `<div class="note-progress">${p.done}/${p.total} done<div class="bar ${p.done === p.total ? 'green' : ''}"><i style="width:${Math.round(p.done / p.total * 100)}%"></i></div></div>` : ''; })()}
+    ${(() => { const p = noteProgress(n); return p ? `<div class="note-progress">${p.done}/${p.total} done<div class="bar ${p.done === p.total ? 'green' : ''}"><i style="width:${Math.round(p.done / p.total * 100)}%"></i></div></div>` + noteQuickAdd(n) : ''; })()}
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><span class="hint" style="margin-left:auto">${ago(n.updated)}</span></div>
   </div>`).join('') : `<div class="card">${emptyState('note', DB.notes.length ? 'No matches' : 'No notes yet', DB.notes.length ? 'Try another category or search.' : 'Capture ideas and references.', addBtn('notes', 'New note'))}</div>`}`;
 };
@@ -3843,7 +4034,8 @@ const ACTIONS = {
   },
   noteCheck: (el, e) => { if (e) e.stopPropagation(); toggleNoteCheck(el.dataset.id, el.dataset.i); },
   addNoteCat: () => addNoteCat(),
-  newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned'].includes(UI.noteCat) ? UI.noteCat : 'Ideas' }),
+  newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned', 'Lists'].includes(UI.noteCat) ? UI.noteCat : noteCats()[0] }),
+  manageNoteCats: () => manageNoteCats(),
   pinNote: el => { const n = find('notes', el.dataset.id); if (!n) return; n.pinned = !n.pinned; n.ts = Date.now(); saveDB(); render(); toast(n.pinned ? 'Pinned' : 'Unpinned'); },
   lessonPlus: el => {
     const c = find('courses', el.dataset.id); if (!c) return;
@@ -3987,7 +4179,7 @@ function openHit(r) {
 
   $('#view').addEventListener('click', e => {
     const el = e.target.closest('[data-act]');
-    if (!el || el.tagName === 'A') return;
+    if (!el || el.tagName === 'A' || el.tagName === 'INPUT') return;
     e.preventDefault();
     ACTIONS[el.dataset.act]?.(el, e);
   });
@@ -4000,7 +4192,10 @@ function openHit(r) {
       if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (err) { /* search input */ } }
     }
   });
-  $('#view').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'captureInput') { e.preventDefault(); ACTIONS.capture(); } });
+  $('#view').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.id === 'captureInput') { e.preventDefault(); ACTIONS.capture(); }
+    if (e.key === 'Enter' && e.target.classList.contains('cl-quick')) { e.preventDefault(); addNoteItem(e.target.dataset.id, e.target.value); }
+  });
   $('#view').addEventListener('change', e => { if (e.target.id === 'impJson') importBackup(e.target.files[0]); });
 
   $('#nav').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) go(b.dataset.view); });
