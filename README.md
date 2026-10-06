@@ -58,14 +58,23 @@ add on one device shows up on the others.
   the next item, Backspace on an empty one removes it), tick or add items straight from the card, and a
   **To-do lists** filter. Categories are your own, each with a lamp icon — add, rename or delete them (trash beside each one on desktop,
   **Delete** on the phone), and a removed category's
-  notes move to the first one left. Pinning as before
+  notes move to the first one left. Pinning as before. **Remind me on my phone** on any note sends it to your phone at that
+  time (checked every five minutes by the Apps Script, v17 or later); a bell on the card shows when
 - **Notifications** — reminders on your phone for expense logging, journalling, tasks, habits,
   budgets, project and course status, study and exercise targets, credit cards and car service.
   Sent by the Apps Script on an hourly schedule, so they arrive with the app closed, through
-  **email**, **ntfy** (free push app, no account) or **Telegram**. Each reminder only fires when it
+  **This phone** (straight to the lock screen, nothing to install — see below), **email**, **ntfy**
+  (free push app, no account) or **Telegram**. Each reminder only fires when it
   is true — nothing nags you to log expenses on a day you already logged some, and nothing repeats
   twice in a day. Set it up in **Settings → Notifications**, where *Preview* shows exactly what
   would be sent right now without sending it.
+
+**Notifications on an iPhone with no app:** open the site in Safari → **Share → Add to Home Screen**,
+open Second Brain from the Home Screen, then **Settings → Notifications**, pick **This phone — no app
+needed** and tap **Turn on for this iPhone**. Allow notifications when asked; a first one arrives straight
+away. This needs Apps Script v17 or later. Opened from the Home Screen, the app also offers this in one tap. Apple only allows website notifications for sites opened from
+the Home Screen, which is why that step is needed. Desktop browsers and Android work the same way, minus
+the Home Screen step.
 
 Every heatmap has a **Month** and a **Year** view: the month view is a calendar of the days themselves, and
 the year view is the same shading across twelve mini months. Shading is relative — the busiest day in view

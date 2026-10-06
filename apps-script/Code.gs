@@ -1,6 +1,10 @@
 /**
  * Second Brain — Google Sheets sync API
  * =====================================
+ * v17 — a reminder set on a note arrives on the phone at that time, checked every
+ *      five minutes. The schedule for it sets itself up on its first hourly run.
+ * v16 — reminders straight to an iPhone with no app to install: add the site to
+ *      the Home Screen and turn notifications on there (channel "This phone").
  * v9 — reads the month's income from the "Starting …" block, including amounts
  *      that only the Notes column names ("Salary + 720 From Egypt + 850
  *      Company" against a 10,500 cell means 12,070 came in). CONFIG.INCOME_FROM
@@ -117,13 +121,19 @@ function handleInner(e, body) {
   var action = body.action || p.action || 'pull';
   var secret = body.secret || p.secret || '';
 
+  // A phone reading its own reminders carries its own device token, not the secret
+  if (action === 'pushInbox') {
+    try { return json({ ok: true, result: pushInboxRead(body.token || p.token, body.since || p.since) }); }
+    catch (err) { return json({ ok: false, error: String(err && err.message ? err.message : err) }); }
+  }
+
   if (CONFIG.SECRET && secret !== CONFIG.SECRET) {
     return json({ ok: false, error: 'Bad secret' });
   }
 
   try {
     switch (action) {
-      case 'ping':          return json({ ok: true, now: Date.now(), version: 15 });
+      case 'ping':          return json({ ok: true, now: Date.now(), version: 17 });
       case 'pull':          return json({ ok: true, now: Date.now(), data: pullAll(), stamp: stamp() });
       case 'stamp':         return json({ ok: true, now: Date.now(), stamp: stamp() });
       case 'push':
@@ -144,6 +154,10 @@ function handleInner(e, body) {
       case 'notifyInstall': return json({ ok: true, result: installNotifications() });
       case 'notifyRemove':  return json({ ok: true, result: removeNotifications() });
       case 'notifyRun':     return json({ ok: true, result: runNotifications() });
+      case 'pushKey':       return json({ ok: true, result: pushPublicKey() });
+      case 'pushSubscribe': return json({ ok: true, result: pushSubscribe(body) });
+      case 'pushUnsubscribe': return json({ ok: true, result: pushUnsubscribe(body) });
+      case 'pushDevices':   return json({ ok: true, result: { devices: pushSubs().map(function (x) { return { device: x.device, added: x.added }; }) } });
       case 'assist':        return json({ ok: true, result: assist(body) });
       case 'workout':       return json({ ok: true, result: makeWorkout(body) });
       default:              return json({ ok: false, error: 'Unknown action: ' + action });
@@ -1442,6 +1456,7 @@ function notifySend(title, body, settings) {
   var channel = s.channel || 'email';
   var to = String(s.to || '').trim();
 
+  if (channel === 'webpush') return pushSend(title, body);
   if (channel === 'ntfy') {
     if (!to) throw new Error('No ntfy topic set');
     var topic = to.replace(/^https?:\/\/ntfy\.sh\//i, '').replace(/^\/+|\/+$/g, '');
@@ -1688,11 +1703,12 @@ function notifyDue(force) {
     if (!body) return;
     out.push({ key: key, title: NOTIFY_TITLES[key] || key, body: body, time: time, day: wantDay });
   });
-  return { settings: { on: s.on, channel: s.channel, hasDestination: !!s.to }, hour: hour, day: day, today: c.today, due: out };
+  return { settings: { on: s.on, channel: s.channel, hasDestination: s.channel === 'webpush' ? pushSubs().length > 0 : !!s.to }, hour: hour, day: day, today: c.today, due: out };
 }
 
 /** The hourly trigger. */
 function runNotifications() {
+  ensureNoteReminders();
   var plan = notifyDue(false);
   if (!plan.settings.on) return plan;
   var state = notifyState();
@@ -1734,13 +1750,61 @@ function notifyTest(body) {
 function installNotifications() {
   removeNotifications();
   ScriptApp.newTrigger('runNotifications').timeBased().everyHours(1).create();
+  ensureNoteReminders();
   return notifyTriggerStatus();
 }
 function removeNotifications() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'runNotifications') ScriptApp.deleteTrigger(t);
+    var fn = t.getHandlerFunction();
+    if (fn === 'runNotifications' || fn === 'runNoteReminders') ScriptApp.deleteTrigger(t);
   });
   return { installed: false };
+}
+
+/* ---------------- reminders set on a note ----------------
+   A note can carry a time (remindTs, milliseconds, set by the app from the
+   phone's own clock, so time zones cannot shift it). Every five minutes this
+   sends the ones whose time has come, once each. */
+var NOTE_REMIND_KEY = 'secondBrainNoteReminders';
+
+function ensureNoteReminders() {
+  var has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'runNoteReminders'; });
+  if (!has) ScriptApp.newTrigger('runNoteReminders').timeBased().everyMinutes(5).create();
+}
+
+function noteReminderText(n) {
+  var lines = String(n.content || '').split('\n').map(function (l) {
+    var m = l.match(/^\s*[-*]\s+\[([ xX])\]\s?(.*)$/);
+    if (m) return m[1] === ' ' ? '☐ ' + m[2] : '';
+    return l.replace(/^#+\s*/, '').replace(/\*\*/g, '');
+  }).filter(function (l) { return l.trim(); });
+  return lines.join('\n').slice(0, 400) || 'Reminder from your notes';
+}
+
+function runNoteReminders(nowMs) {
+  applyUserConfig();
+  var now = nowMs || Date.now();
+  var s = notifySettings();
+  if (s.on === false) return { sent: [] };
+  var brain = readBrain() || {};
+  var notes = Array.isArray(brain.notes) ? brain.notes : [];
+  var props = PropertiesService.getScriptProperties();
+  var done = {};
+  try { done = JSON.parse(props.getProperty(NOTE_REMIND_KEY) || '{}'); } catch (e) { done = {}; }
+  var sent = [], keep = {};
+  notes.forEach(function (n) {
+    var at = Number(n.remindTs) || 0;
+    if (!at) return;
+    if (done[n.id] === at) { keep[n.id] = at; return; }          // already sent for this time
+    if (at > now || now - at > 24 * 3600000) return;           // not yet, or too old to be useful
+    try {
+      notifySend('⏰ ' + (n.title || 'Note'), noteReminderText(n), s);
+      keep[n.id] = at;
+      sent.push(n.id);
+    } catch (err) { /* left unsent; the next run tries again */ }
+  });
+  props.setProperty(NOTE_REMIND_KEY, JSON.stringify(keep));
+  return { sent: sent };
 }
 /**
  * Everything that has to be true for a reminder to reach your phone, answered
@@ -1753,8 +1817,10 @@ function notifyCheck(body) {
     scheduleOn: trig.installed,
     remindersOn: !!s.on,
     channel: s.channel || 'email',
-    hasDestination: !!String(s.to || '').trim(),
-    destination: String(s.to || '').replace(/^(.{4}).*(.{3})$/, '$1…$2'),
+    hasDestination: s.channel === 'webpush' ? pushSubs().length > 0 : !!String(s.to || '').trim(),
+    destination: s.channel === 'webpush'
+      ? pushSubs().map(function (x) { return x.device; }).join(', ')
+      : String(s.to || '').replace(/^(.{4}).*(.{3})$/, '$1…$2'),
     timezone: trig.timezone,
     scriptAccount: '',
     categoriesOn: 0,
@@ -1789,7 +1855,192 @@ function notifyCheck(body) {
 
 function notifyTriggerStatus() {
   var found = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'runNotifications'; });
+  try { if (found.length) ensureNoteReminders(); } catch (e) { /* needs the schedule permission */ }
   return { installed: found.length > 0, count: found.length, timezone: notifyTZ(), state: notifyState() };
+}
+
+/* ============================================================
+   WEB PUSH — reminders straight to the phone, no app to install
+
+   On an iPhone, add the site to the Home Screen, open it from there and tap
+   "Turn on for this phone" (Settings → Notifications). The phone then hands
+   this script an address to knock on. Each reminder is kept in a small inbox
+   here, and the knock tells the phone to come and read it — so the knock
+   itself carries nothing and needs no encryption. The knock is signed with a
+   key pair this script makes for itself the first time it is needed (VAPID),
+   which is how Apple and Google know the knock came from you.
+
+   Plain JavaScript all the way down: P-256 and ES256 are written out below
+   because Apps Script has no elliptic-curve crypto of its own.
+   ============================================================ */
+
+var PUSH_KEYS_KEY = 'secondBrainVapid';
+var PUSH_SUBS_KEY = 'secondBrainPushSubs';
+var PUSH_INBOX_KEY = 'secondBrainPushInbox';
+
+var P256 = (function () {
+  var B = function (h) { return BigInt('0x' + h); };
+  var p = B('ffffffff00000001000000000000000000000000ffffffffffffffffffffffff');
+  var n = B('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+  var G = { x: B('6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'),
+            y: B('4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5') };
+  var ZERO = BigInt(0), ONE = BigInt(1), TWO = BigInt(2), THREE = BigInt(3);
+  var mod = function (a, m) { var r = a % m; return r < ZERO ? r + m : r; };
+  var inv = function (a, m) {            // extended Euclid
+    var lm = ONE, hm = ZERO, low = mod(a, m), high = m;
+    while (low > ONE) { var r = high / low; var nm = hm - lm * r, nw = high - low * r; hm = lm; high = low; lm = nm; low = nw; }
+    return mod(lm, m);
+  };
+  var add = function (P, Q) {
+    if (!P) return Q; if (!Q) return P;
+    if (P.x === Q.x) {
+      if (mod(P.y + Q.y, p) === ZERO) return null;
+      var l = mod(THREE * P.x * P.x - THREE, p) * inv(TWO * P.y, p) % p;
+    } else {
+      var l = mod(Q.y - P.y, p) * inv(mod(Q.x - P.x, p), p) % p;
+    }
+    var x = mod(l * l - P.x - Q.x, p);
+    return { x: x, y: mod(l * (P.x - x) - P.y, p) };
+  };
+  var mul = function (k, P) {
+    var R = null, A = P;
+    while (k > ZERO) { if (k & ONE) R = add(R, A); A = add(A, A); k >>= ONE; }
+    return R;
+  };
+  return { p: p, n: n, G: G, mod: mod, inv: inv, mul: mul, add: add };
+})();
+
+/* bytes: Apps Script hands out signed bytes (-128..127); these work in 0..255 */
+function pushU8(bytes) { return bytes.map(function (b) { return b & 255; }); }
+function pushS8(bytes) { return bytes.map(function (b) { return b > 127 ? b - 256 : b; }); }
+function pushHex(bytes) { return bytes.map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); }
+function pushInt(bytes) { return BigInt('0x' + (pushHex(bytes) || '00')); }
+function pushBytes(int, len) {
+  var h = int.toString(16); while (h.length < len * 2) h = '0' + h;
+  var out = []; for (var i = 0; i < len * 2; i += 2) out.push(parseInt(h.substr(i, 2), 16));
+  return out;
+}
+function pushB64(bytes) { return Utilities.base64EncodeWebSafe(pushS8(bytes)).replace(/=+$/, ''); }
+function pushSha(bytes) { return pushU8(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, pushS8(bytes))); }
+function pushHmac(key, bytes) { return pushU8(Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_SHA_256, pushS8(bytes), pushS8(key))); }
+function pushUtf8(s) { return pushU8(Utilities.newBlob(String(s)).getBytes()); }
+
+/** ES256 over a message, with k chosen as RFC 6979 says (no randomness needed). */
+function pushSign(msgBytes, d) {
+  var n = P256.n, h = pushSha(msgBytes), x = pushBytes(d, 32);
+  var z = P256.mod(pushInt(h), n), hb = pushBytes(z, 32);
+  var V = [], K = [];
+  for (var i = 0; i < 32; i++) { V.push(1); K.push(0); }
+  K = pushHmac(K, V.concat([0], x, hb)); V = pushHmac(K, V);
+  K = pushHmac(K, V.concat([1], x, hb)); V = pushHmac(K, V);
+  for (;;) {
+    V = pushHmac(K, V);
+    var k = pushInt(V);
+    if (k > BigInt(0) && k < n) {
+      var R = P256.mul(k, P256.G), r = P256.mod(R.x, n);
+      if (r !== BigInt(0)) {
+        var s = P256.mod(P256.inv(k, n) * (z + r * d), n);
+        if (s !== BigInt(0)) return pushBytes(r, 32).concat(pushBytes(s, 32));
+      }
+    }
+    K = pushHmac(K, V.concat([0])); V = pushHmac(K, V);
+  }
+}
+
+/** This script's own key pair, made once and kept in Script Properties. */
+function pushKeys() {
+  if (typeof BigInt === 'undefined') throw new Error('This Apps Script project runs the old engine. Project Settings → tick "Enable Chrome V8 runtime", then redeploy.');
+  var props = PropertiesService.getScriptProperties();
+  var saved = props.getProperty(PUSH_KEYS_KEY);
+  if (saved) return JSON.parse(saved);
+  var seed = [];
+  for (var i = 0; i < 4; i++) seed = seed.concat(pushUtf8(Utilities.getUuid() + Math.random() + Date.now()));
+  var d = P256.mod(pushInt(pushSha(seed)), P256.n - BigInt(1)) + BigInt(1);
+  var Q = P256.mul(d, P256.G);
+  var keys = { d: d.toString(16), pub: pushB64([4].concat(pushBytes(Q.x, 32), pushBytes(Q.y, 32))) };
+  props.setProperty(PUSH_KEYS_KEY, JSON.stringify(keys));
+  return keys;
+}
+function pushPublicKey() { return { publicKey: pushKeys().pub }; }
+
+/** The signed "this knock is from me" header for one push service. */
+function pushVapid(endpoint) {
+  var keys = pushKeys();
+  var aud = String(endpoint).match(/^https:\/\/[^\/]+/)[0];
+  var who = '';
+  try { who = Session.getEffectiveUser().getEmail(); } catch (e) { who = ''; }
+  var head = pushB64(pushUtf8(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  var claims = pushB64(pushUtf8(JSON.stringify({
+    aud: aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+    sub: who ? 'mailto:' + who : 'https://github.com/yahianassef/second-brain'
+  })));
+  var unsigned = head + '.' + claims;
+  var sig = pushSign(pushUtf8(unsigned), BigInt('0x' + keys.d));
+  return 'vapid t=' + unsigned + '.' + pushB64(sig) + ', k=' + keys.pub;
+}
+
+function pushSubs() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PUSH_SUBS_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function savePushSubs(list) { PropertiesService.getScriptProperties().setProperty(PUSH_SUBS_KEY, JSON.stringify(list)); }
+
+/** A phone signing up. Returns the token it reads its inbox with. */
+function pushSubscribe(body) {
+  var endpoint = String((body.subscription && body.subscription.endpoint) || '');
+  if (!/^https:\/\//.test(endpoint)) throw new Error('That is not a push address');
+  var list = pushSubs().filter(function (s) { return s.endpoint !== endpoint; });
+  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  list.push({ endpoint: endpoint, token: token, device: String(body.device || 'Phone').slice(0, 60), added: Date.now() });
+  savePushSubs(list.slice(-10));
+  return { token: token, devices: list.length };
+}
+function pushUnsubscribe(body) {
+  var list = pushSubs().filter(function (s) { return s.endpoint !== body.endpoint && s.token !== body.token; });
+  savePushSubs(list);
+  return { devices: list.length };
+}
+
+function pushInbox() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PUSH_INBOX_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+/** What a phone reads when knocked: messages newer than the last one it showed. */
+function pushInboxRead(token, since) {
+  var known = pushSubs().some(function (s) { return s.token === token; });
+  if (!token || !known) throw new Error('Unknown device');
+  var after = Number(since) || 0;
+  return { messages: pushInbox().filter(function (m) { return m.ts > after; }), now: Date.now() };
+}
+
+/** Keep the message, then knock on every phone that signed up. */
+function pushSend(title, body) {
+  var subs = pushSubs();
+  if (!subs.length) throw new Error('No phone has turned notifications on yet — open the app from your Home Screen and tap "Turn on for this phone"');
+  var now = Date.now();
+  var inbox = pushInbox().filter(function (m) { return now - m.ts < 3 * 86400000; });
+  inbox.push({ id: Utilities.getUuid(), title: String(title), body: String(body).slice(0, 1200), ts: now });
+  PropertiesService.getScriptProperties().setProperty(PUSH_INBOX_KEY, JSON.stringify(inbox.slice(-15)));
+
+  var ok = 0, gone = [], errors = [];
+  subs.forEach(function (s) {
+    try {
+      var res = UrlFetchApp.fetch(s.endpoint, {
+        method: 'post',
+        headers: { Authorization: pushVapid(s.endpoint), TTL: '86400', Urgency: 'high' },
+        muteHttpExceptions: true
+      });
+      var code = res.getResponseCode();
+      if (code >= 200 && code < 300) ok++;
+      else if (code === 404 || code === 410) gone.push(s.endpoint);     // the phone turned it off
+      else errors.push(s.device + ': ' + code + ' ' + String(res.getContentText()).slice(0, 120));
+    } catch (err) {
+      errors.push(s.device + ': ' + (err && err.message ? err.message : err));
+    }
+  });
+  if (gone.length) savePushSubs(subs.filter(function (s) { return gone.indexOf(s.endpoint) < 0; }));
+  if (!ok) throw new Error(errors.length ? 'The phone did not accept it — ' + errors.join('; ') : 'That phone has turned notifications off; turn them on again in the app');
+  return 'phone:' + ok + (ok === 1 ? ' device' : ' devices');
 }
 
 /* ============================================================

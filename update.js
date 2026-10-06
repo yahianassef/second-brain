@@ -7,7 +7,7 @@
    cache. This refetches the page and every script it loads with the cache
    deliberately bypassed, so the reload afterwards picks up the new files.
    ========================================================= */
-const UPDATE_FILES = ['theme.css', 'update.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js',
+const UPDATE_FILES = ['theme.css', 'update.js', 'push.js', 'sw.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js',
   'theme.js', 'assistant.js', 'cloud-config.js', 'cloud.js', 'cloud-ui.js'];
 
 const AppUpdate = {
@@ -57,9 +57,10 @@ const AppUpdate = {
         const keys = await caches.keys();
         await Promise.all(keys.map(k => caches.delete(k)));
       }
+      // The notifications helper stays (it caches nothing); it is only told to update
       if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
         const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.unregister()));
+        await Promise.all(regs.map(r => r.update().catch(() => null)));
       }
     } catch (e) { /* neither is required for this to work */ }
 

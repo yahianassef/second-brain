@@ -256,6 +256,8 @@ button.item:active{opacity:.6}
   background:none;display:grid;place-items:center;color:transparent;cursor:pointer;padding:0}
 .chk-box.on{background:linear-gradient(135deg,var(--blue),var(--blue-2));border-color:transparent;color:#fff}
 .note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--text-3)}
+.chip.remind{color:var(--blue-2);border-color:rgba(var(--acc2-rgb),.3)}
+.chip.remind.past{color:var(--text-3);border-color:var(--border)}
 .cl-head{display:flex;align-items:center;gap:7px;margin:14px 0 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
 .cl-count{font-weight:500;color:var(--text-3)}
 .cl-list{display:flex;flex-direction:column;gap:6px}
@@ -467,6 +469,8 @@ mark{background:rgba(var(--acc2-rgb),.3);color:var(--text-hi);border-radius:3px;
 .row-gap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
 /* Notifications panel */
+.nf-phone{margin-top:12px}
+.nf-phone[hidden],#nfToField[hidden]{display:none}
 .notify-list{display:flex;flex-direction:column;gap:2px}
 .notify-row{display:flex;align-items:center;gap:12px;padding:10px 10px;border-radius:12px;border:1px solid transparent;flex-wrap:wrap}
 .notify-row:hover{background:var(--surface-2)}
@@ -762,6 +766,23 @@ function wireNoteEditor(form) {
   }, true);
   count();
   return { add, list };
+}
+
+/** "Remind me" on a note: the phone's own clock turned into one moment in time, so the script's time zone cannot move it. */
+function noteRemindAfter(n) {
+  const t = n.remindAt ? new Date(n.remindAt).getTime() : 0;
+  n.remindTs = isFinite(t) ? t : 0;
+  if (n.remindTs && n.remindTs > Date.now() && typeof Sheets !== 'undefined' && Sheets.connected()) {
+    setTimeout(() => { try { Sheets.queue(true); } catch (e) { /* the next sync carries it */ } }, 0);
+  }
+}
+/** The bell on a note card. */
+function noteRemindChip(n) {
+  const t = Number(n.remindTs) || 0;
+  if (!t) return '';
+  const d = new Date(t), past = t <= Date.now();
+  const when = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `<span class="chip remind${past ? ' past' : ''}" title="${past ? 'Reminder sent' : 'Reminder on your phone'}">${icon('clock', 11)} ${past ? 'Reminded ' : ''}${esc(when)}</span>`;
 }
 
 /* Categories are yours: rename them, remove them, add as many as you like. */
@@ -1190,8 +1211,10 @@ const FORMS = {
     { k: 'title', l: 'Title', t: 'text', req: true, full: true },
     { k: 'category', l: 'Category', t: 'select', o: () => [...noteCats(), { v: '__new', l: '+ New category…' }], def: () => noteCats()[0] || 'Ideas' },
     { k: 'content', l: 'Note', t: 'note', full: true },
+    { k: 'remindAt', l: 'Remind me on my phone', t: 'datetime-local', full: true, ph: 'Pick a date and time' },
     { k: 'pinned', l: 'Pin', t: 'check', cl: 'Pin to the top of Notes', full: true }
-  ] },
+  ], validate: (v, item) => v.remindAt && v.remindAt !== (item && item.remindAt) && new Date(v.remindAt).getTime() < Date.now() - 60000 ? 'Pick a reminder time that is still ahead — or clear it' : '',
+     after: n => noteRemindAfter(n) },
 
   habits: { noun: 'Habit', fields: [
     { k: 'name', l: 'Habit', t: 'text', req: true, full: true, ph: 'e.g. Read 20 pages' },
@@ -2269,6 +2292,7 @@ const NOTIFY_CATS = [
 ];
 const NOTIFY_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const CHANNEL_HELP = {
+  webpush: { label: 'This phone — no app needed', ph: '', help: 'Reminders appear on your lock screen like any app’s. On an iPhone: open the site in Safari, tap <b>Share → Add to Home Screen</b>, open Second Brain from the Home Screen, come back here and tap <b>Turn on for this phone</b>.' },
   email: { label: 'Email', ph: 'you@gmail.com', help: 'Leave empty to use the Google account the script runs as. Arrives as an email, so your phone shows it like any other mail.' },
   ntfy: { label: 'ntfy (instant push)', ph: 'a-topic-only-you-know', help: 'Install the free <b>ntfy</b> app, subscribe to a topic no one else would guess, and put the same topic here. True push, no account.' },
   telegram: { label: 'Telegram', ph: 'botToken|chatId', help: 'Create a bot with <b>@BotFather</b>, message it once, then paste <code>botToken|chatId</code>. Your chat id comes from <b>@userinfobot</b>.' }
@@ -2317,9 +2341,10 @@ const Notify = {
           <div class="form-grid">
             <div class="field"><label for="nfChannel">Channel</label>
               <select class="select" id="nfChannel">${Object.keys(CHANNEL_HELP).map(k => `<option value="${k}"${cfg.channel === k ? ' selected' : ''}>${CHANNEL_HELP[k].label}</option>`).join('')}</select></div>
-            <div class="field"><label for="nfTo">Destination</label><input class="input" id="nfTo" value="${esc(cfg.to)}" placeholder="${esc(CHANNEL_HELP[cfg.channel].ph)}" autocomplete="off" spellcheck="false"></div>
+            <div class="field" id="nfToField"${cfg.channel === 'webpush' ? ' hidden' : ''}><label for="nfTo">Destination</label><input class="input" id="nfTo" value="${esc(cfg.to)}" placeholder="${esc(CHANNEL_HELP[cfg.channel].ph)}" autocomplete="off" spellcheck="false"></div>
           </div>
           <p class="hint" id="nfHelp" style="margin-top:8px">${CHANNEL_HELP[cfg.channel].help}</p>
+          <div id="nfPhone" class="nf-phone"${cfg.channel === 'webpush' ? '' : ' hidden'}></div>
           <div class="btn-row" style="margin-top:12px">
             <label class="toggle"><input type="checkbox" id="nfOn"${cfg.on ? ' checked' : ''}><span></span>Send reminders</label>
             <button class="btn btn-ghost" id="nfTest">${icon('sparkle', 15)} Send a test</button>
@@ -2364,6 +2389,9 @@ const Notify = {
         const h = CHANNEL_HELP[e.target.value];
         $('#nfHelp', m).innerHTML = h.help;
         $('#nfTo', m).placeholder = h.ph;
+        $('#nfToField', m).hidden = e.target.value === 'webpush';
+        $('#nfPhone', m).hidden = e.target.value !== 'webpush';
+        if (e.target.value === 'webpush') Notify.phone(m, read, out);
       }
       const row = e.target.closest && e.target.closest('.notify-row');
       if (row && e.target.dataset.nfield === 'on') row.classList.toggle('on', e.target.checked);
@@ -2390,7 +2418,7 @@ const Notify = {
       out('<span class="muted">Asking your script…</span>');
       try {
         const r = (await Sheets.call('notifyCheck', { send: true })).result;
-        const chan = { email: 'Email', ntfy: 'ntfy', telegram: 'Telegram' }[r.channel] || r.channel;
+        const chan = { webpush: 'This phone', email: 'Email', ntfy: 'ntfy', telegram: 'Telegram' }[r.channel] || r.channel;
         const steps = [
           nfLine(r.scheduleOn, 'The hourly schedule is on',
             r.scheduleOn ? `running on ${esc(r.timezone)} time` : 'nothing will ever be sent until this is on'),
@@ -2440,6 +2468,50 @@ const Notify = {
       catch (err) { out(`<span class="txt-red">${esc(err.message)}</span>`); }
     };
     if (connected) Notify.status(m);
+    if (cfg.channel === 'webpush') Notify.phone(m, read, out);
+  },
+
+  /** The "Turn on for this phone" block: says what this device can do and does it. */
+  async phone(m, read, out) {
+    const box = $('#nfPhone', m);
+    if (!box || typeof PhonePush === 'undefined') return;
+    const can = PhonePush.can(), on = await PhonePush.isOn();
+    const say = {
+      'needs-home-screen': 'Open Second Brain from your Home Screen to turn notifications on. (Safari → Share → Add to Home Screen.)',
+      unsupported: 'This browser cannot show notifications from a website. On an iPhone, use Safari and add the site to your Home Screen.',
+      blocked: 'Notifications are blocked for this app. Allow them in the phone’s Settings → Notifications → Second Brain, then come back.'
+    }[can];
+    box.innerHTML = on
+      ? `<div class="nf-check ok"><span>&#10003;</span><div><b>On for this ${esc(PhonePush.device())}</b><i>reminders arrive on the lock screen</i></div></div>
+         <div class="btn-row" style="margin-top:10px"><button class="btn btn-ghost sm" id="nfPhoneOff">${icon('x', 14)} Turn off on this device</button></div>`
+      : say ? `<p class="hint" style="margin-top:4px">${say}</p>`
+      : `<button class="btn btn-primary" id="nfPhoneOn">${icon('check', 15)} Turn on for this ${esc(PhonePush.device())}</button>`;
+    const onBtn = $('#nfPhoneOn', box), offBtn = $('#nfPhoneOff', box);
+    if (onBtn) onBtn.onclick = async () => {
+      onBtn.disabled = true; out('<span class="muted">Asking the phone for permission…</span>');
+      try {
+        await PhonePush.enable();
+        $('#nfChannel', m).value = 'webpush';
+        $('#nfOn', m).checked = true;
+        notifySave(read());
+        // the script reads the channel from the synced brain, so let that land first
+        try { await Sheets.sync(); } catch (e) { /* the test below says if it did not */ }
+        out('<span class="muted">Turned on — sending a first notification…</span>');
+        try {
+          const st = (await Sheets.call('notifyStatus', {})).result;
+          if (!st.installed) await Sheets.call('notifyInstall', {});
+          await Sheets.call('notifyTest', { message: 'Notifications are on. Your reminders will appear here.' });
+          out('Done. A notification should be on your screen now. Tick what you want below and press <b>Save</b>.');
+        } catch (err) { out(`Turned on for this device. The first notification did not go out yet: ${esc(err.message)}`); }
+        toast('Notifications are on for this device');
+      } catch (err) { out(`<span class="txt-red">${esc(err.message)}</span>`); }
+      Notify.phone(m, read, out); Notify.status(m);
+    };
+    if (offBtn) offBtn.onclick = async () => {
+      await PhonePush.disable();
+      out('Turned off on this device.');
+      Notify.phone(m, read, out);
+    };
   },
 
   /** Says whether the script is new enough and whether the schedule is running. */
@@ -3481,7 +3553,7 @@ SCREENS.notes = () => {
     ${noteCats().includes(UI.noteCat) ? `<button class="btn btn-danger sm" data-act="delNoteCat" data-val="${esc(UI.noteCat)}">${icon('trash', 14)} Delete “${esc(UI.noteCat)}”</button>` : ''}
   </div>
   ${list.length ? list.map(n => `<div class="card tap" data-act="edit" data-type="notes" data-id="${n.id}">
-    <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>
+    <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="row" style="gap:6px;flex-wrap:wrap"><span class="chip ${n.pinned ? 'blue' : ''}">${esc(n.category)}</span>${noteRemindChip(n)}</span>
       <button class="icon-btn${n.pinned ? ' on' : ''}" data-act="pinNote" data-id="${n.id}" aria-label="Pin">${icon('pin', 17)}</button></div>
     <b style="font-size:16.5px;letter-spacing:-.01em">${highlight(n.title, q)}</b>
     <div class="prose${noteProgress(n) ? '' : ' clamp'}" style="margin-top:7px;font-size:15px">${richText(n.content, n.id)}</div>
@@ -4269,7 +4341,7 @@ function importBackup(file) {
 <!-- Cloud mode: accounts + per-user database. Inert unless cloud-config.js
      carries real values, which only the public deployment does. -->
 <!-- Assistant: say or type it, your Apps Script turns it into a record. -->
-<script>loadFiles(['update.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js', 'theme.js', 'assistant.js']);</script>
+<script>loadFiles(['update.js', 'push.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js', 'theme.js', 'assistant.js']);</script>
 <script src="cloud-config.js"></script>
 <script>loadFiles(['cloud.js', 'cloud-ui.js']);</script>
 </body>
