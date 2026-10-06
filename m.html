@@ -12,7 +12,20 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#07090D">
-<link rel="stylesheet" href="theme.css">
+<script>
+  /* Every file is fetched under the page's own version, so a refresh that brings
+     a new page also brings its new scripts and styles, never yesterday's. */
+  window.APP_V = encodeURIComponent(document.lastModified || Date.now());
+  window.loadFiles = function (files) {
+    files.forEach(function (f) {
+      document.write(/\.css$/.test(f)
+        ? '<link rel="stylesheet" href="' + f + '?v=' + APP_V + '">'
+        : '<script src="' + f + '?v=' + APP_V + '"><\/script>');
+    });
+  };
+  loadFiles(['theme.css']);
+</script>
+<noscript><link rel="stylesheet" href="theme.css"></noscript>
 <script>
 /* Decide the theme before anything paints, or a light-mode device flashes dark.
    The full choice lives in your synced settings; this is the local mirror. */
@@ -4256,17 +4269,8 @@ function importBackup(file) {
 <!-- Cloud mode: accounts + per-user database. Inert unless cloud-config.js
      carries real values, which only the public deployment does. -->
 <!-- Assistant: say or type it, your Apps Script turns it into a record. -->
-<script src="update.js"></script>
-<script src="motion.js"></script>
-<script src="gym-data.js"></script>
-<script src="gym.js"></script>
-<script src="gym-make.js"></script>
-<script src="graph.js"></script>
-<script src="polish.js"></script>
-<script src="theme.js"></script>
-<script src="assistant.js"></script>
+<script>loadFiles(['update.js', 'motion.js', 'gym-data.js', 'gym.js', 'gym-make.js', 'graph.js', 'polish.js', 'theme.js', 'assistant.js']);</script>
 <script src="cloud-config.js"></script>
-<script src="cloud.js"></script>
-<script src="cloud-ui.js"></script>
+<script>loadFiles(['cloud.js', 'cloud-ui.js']);</script>
 </body>
 </html>
