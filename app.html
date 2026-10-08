@@ -504,6 +504,13 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.6) sepia(1) h
 .note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px;color:var(--text-3)}
 .chip.remind{color:var(--blue-2);border-color:rgba(var(--acc2-rgb),.3)}
 .chip.remind.past{color:var(--text-3);border-color:var(--border)}
+.c-tasks{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.c-tasks-head{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:8px}
+.c-tasks-head .hint{margin-left:auto;font-weight:500}
+.c-tasks-list{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.ct-add{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ct-add .ct-title{flex:1 1 100%;min-width:0}
+.ct-add .ct-due{flex:1;min-width:0}
 .cl-head{display:flex;align-items:center;gap:7px;margin:14px 0 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
 .cl-count{font-weight:500;color:var(--text-3)}
 .cl-list{display:flex;flex-direction:column;gap:6px}
@@ -1108,6 +1115,38 @@ function noteRemindChip(n) {
   return `<span class="chip remind${past ? ' past' : ''}" title="${past ? 'Reminder sent' : 'Reminder on your phone'}">${icon('clock', 11)} ${past ? 'Reminded ' : ''}${esc(when)}</span>`;
 }
 
+/* Each course keeps its own to-do list. Its items are ordinary tasks that
+   carry the course's id, so they also show in Tasks, sort by deadline there,
+   and are covered by the same reminders as every other task. */
+const courseTasks = id => DB.tasks.filter(t => t.courseId === id)
+  .sort((a, b) => (a.status === 'Done') - (b.status === 'Done') || (a.due || '9999').localeCompare(b.due || '9999'));
+function addCourseTask(id, title, due) {
+  title = String(title || '').trim();
+  if (!title || !DB.courses.some(c => c.id === id)) return false;
+  DB.tasks.unshift({ id: uid(), created: today(), updated: today(), ts: Date.now(), title, priority: 'Medium', due: due || '',
+    status: 'To Do', projectId: '', courseId: id, notes: '', completed: '' });
+  saveDB();
+  render();
+  const again = document.querySelector(`.ct-title[data-id="${id}"]`);
+  if (again) again.focus();
+  toast('Task added to ' + courseName(id));
+  return true;
+}
+/** The to-do block inside a course card. */
+function courseTasksHTML(c, row) {
+  const list = courseTasks(c.id), open = list.filter(t => t.status !== 'Done');
+  const late = open.filter(t => t.due && t.due < today()).length;
+  return `<div class="c-tasks">
+    <div class="c-tasks-head">${icon('tasks', 14)} To-do${list.length ? `<span class="hint">${list.length - open.length}/${list.length} done${late ? ` · <span class="txt-red">${late} overdue</span>` : ''}</span>` : ''}</div>
+    ${list.length ? `<div class="c-tasks-list">${list.map(row).join('')}</div>` : ''}
+    <div class="ct-add">
+      <input class="input sm ct-title" data-act="noop" data-id="${c.id}" placeholder="Add a task…" aria-label="New task for ${esc(c.name)}" enterkeyhint="done">
+      <input class="input sm ct-due" type="date" data-act="noop" data-id="${c.id}" aria-label="Deadline">
+      <button class="btn btn-primary sm" data-act="courseTaskAdd" data-id="${c.id}" aria-label="Add task">${icon('plus', 14)}</button>
+    </div>
+  </div>`;
+}
+
 /* Categories are yours: rename them, remove them, add as many as you like. */
 function setNoteCats(list) {
   DB.settings.noteCatList = list;
@@ -1483,6 +1522,7 @@ const FORMS = {
     { k: 'status', l: 'Status', t: 'select', o: LISTS.taskStatus, def: 'To Do' },
     { k: 'due', l: 'Due date', t: 'date', def: () => today() },
     { k: 'projectId', l: 'Project', t: 'select', o: () => [{ v: '', l: '— No project —' }, ...DB.projects.map(p => ({ v: p.id, l: p.name }))] },
+    { k: 'courseId', l: 'Course', t: 'select', o: () => [{ v: '', l: '— No course —' }, ...DB.courses.map(c => ({ v: c.id, l: c.name }))] },
     { k: 'notes', l: 'Notes', t: 'textarea', full: true, rows: 3 }
   ], after: t => { t.completed = t.status === 'Done' ? (t.completed || today()) : ''; } },
 
@@ -1876,7 +1916,7 @@ function upcoming(days = 14) {
 const projName = id => (DB.projects.find(p => p.id === id) || {}).name || '';
 const EXPORTS = {
   Projects: { rows: () => DB.projects, cols: [['Project', 'name'], ['Status', 'status'], ['Priority', 'priority'], ['Area', 'area'], ['Start Date', 'start'], ['Deadline', 'deadline'], ['Progress %', r => num(r.progress) + '%'], ['Link', 'link'], ['Description', 'description']] },
-  Tasks: { rows: () => DB.tasks, cols: [['Task', 'title'], ['Project', r => projName(r.projectId)], ['Priority', 'priority'], ['Status', 'status'], ['Due Date', 'due'], ['Notes', 'notes']] },
+  Tasks: { rows: () => DB.tasks, cols: [['Task', 'title'], ['Project', r => projName(r.projectId)], ['Course', r => courseName(r.courseId)], ['Priority', 'priority'], ['Status', 'status'], ['Due Date', 'due'], ['Notes', 'notes']] },
   Transactions: { rows: () => [...(typeof usingSheets === 'function' && usingSheets() ? expenseUniverse() : DB.transactions)].sort((a, b) => String(a.date).localeCompare(String(b.date))), cols: [['Date', 'date'], ['Type', 'type'], ['Category', 'category'], ['Description', 'description'], ['Amount', 'amount'], ['Account', 'account']] },
   Budget: { rows: () => DB.budgets, cols: [['Category', 'category'], ['Monthly Budget', 'limit']] },
   Goals: { rows: () => DB.goals, cols: [['Goal', 'name'], ['Target Amount', 'target'], ['Saved So Far', 'saved'], ['Target Date', 'deadline']] },
@@ -2192,7 +2232,7 @@ function taskRow(x, compact = false) {
   return `<div class="task${done ? ' done' : ''}" data-act="edit" data-type="tasks" data-id="${x.id}">
     <button class="check${done ? ' on' : ''}" data-act="toggleTask" data-id="${x.id}" aria-label="${done ? 'Mark as not done' : 'Mark as done'}">${icon('check', 13, 3)}</button>
     <div class="t-body"><div class="t-title">${esc(x.title)}</div>
-      <div class="t-meta">${x.status === 'In Progress' ? '<span class="chip blue">In progress</span>' : ''}${p && !compact ? `<span class="chip">${icon('folder', 11)} ${esc(p.name)}</span>` : ''}${compact && x.due ? `<span class="t-note ${dueCls}">${relDay(x.due)}</span>` : ''}${x.notes && !compact ? `<span class="t-note">${esc(x.notes)}</span>` : ''}</div></div>
+      <div class="t-meta">${x.status === 'In Progress' ? '<span class="chip blue">In progress</span>' : ''}${p && !compact ? `<span class="chip">${icon('folder', 11)} ${esc(p.name)}</span>` : ''}${x.courseId && courseName(x.courseId) && !compact ? `<span class="chip">${icon('cap', 11)} ${esc(courseName(x.courseId))}</span>` : ''}${compact && x.due ? `<span class="t-note ${dueCls}">${relDay(x.due)}</span>` : ''}${x.notes && !compact ? `<span class="t-note">${esc(x.notes)}</span>` : ''}</div></div>
     ${compact ? `<span class="prio-tag ${x.priority}" style="width:auto">${icon('flag', 13)}</span>` : `
     <span class="prio-tag ${x.priority}">${icon('flag', 13)} ${x.priority}</span>
     <span class="t-due ${dueCls}">${x.due ? icon('calendar', 13) + ' ' + (done ? fmtDate(x.due) : relDay(x.due)) : ''}</span>
@@ -2876,6 +2916,7 @@ RENDER.courses = () => {
       <div><div class="c-lessons"><span><b>${num(c.lessonsDone)}</b> / ${num(c.lessonsTotal)} lessons</span><b>${pct}%</b></div><div class="bar ${done ? 'green' : ''}"><i style="width:${pct}%"></i></div></div>
       ${res.length ? `<div class="resources">${res.slice(0, 3).map(r => `<div>${richText(r).replace(/^<p>|<\/p>$/g, '')}</div>`).join('')}${res.length > 3 ? `<div class="muted">+${res.length - 3} more</div>` : ''}</div>` : ''}
       ${c.notes ? `<div class="hint">${esc(c.notes)}</div>` : ''}
+      ${courseTasksHTML(c, x => taskRow(x, true))}
       <div class="p-foot">
         <span class="${!done && n !== null && n < 0 ? 'txt-red' : ''}">${icon('calendar', 14)} ${c.deadline ? (done ? 'Finished ' + fmtDate(c.deadline) : relDay(c.deadline)) : 'No deadline'}</span>
         ${!done ? `<button class="btn btn-ghost sm" style="margin-left:auto" data-act="lessonPlus" data-id="${c.id}">${icon('check', 14)} Log lesson</button>` : '<span class="txt-green" style="margin-left:auto">Completed</span>'}
@@ -4880,6 +4921,7 @@ const ACTIONS = {
   addNoteCat: () => addNoteCat(),
   newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned', 'Lists'].includes(UI.noteCat) ? UI.noteCat : noteCats()[0] }),
   manageNoteCats: () => manageNoteCats(),
+  courseTaskAdd: el => { const card = el.closest('.c-tasks'); addCourseTask(el.dataset.id, $('.ct-title', card).value, $('.ct-due', card).value); },
   delNoteCat: (el, e) => { if (e) e.stopPropagation(); confirmDeleteNoteCat(el.dataset.val); },
   pinNote: el => { const n = find('notes', el.dataset.id); if (!n) return; n.pinned = !n.pinned; saveDB(); render(); toast(n.pinned ? 'Note pinned' : 'Note unpinned'); },
   noteTag: el => { UI.noteTag = UI.noteTag === el.dataset.val ? '' : el.dataset.val; render(); },
@@ -4933,6 +4975,7 @@ function wireView() {
     if (e.key === 'Enter' && e.target.id === 'captureInput') { e.preventDefault(); ACTIONS.capture(); return; }
     if (e.key === 'Enter' && e.target.id === 'qaTitle') { e.preventDefault(); ACTIONS.quickTask(); return; }
     if (e.key === 'Enter' && e.target.classList.contains('cl-quick')) { e.preventDefault(); addNoteItem(e.target.dataset.id, e.target.value); return; }
+    if (e.key === 'Enter' && e.target.classList.contains('ct-title')) { e.preventDefault(); const card = e.target.closest('.c-tasks'); addCourseTask(e.target.dataset.id, e.target.value, $('.ct-due', card).value); return; }
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[tabindex="0"][data-act]')) { e.preventDefault(); ACTIONS[e.target.dataset.act]?.(e.target, e); }
   });
   view.addEventListener('change', e => {

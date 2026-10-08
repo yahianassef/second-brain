@@ -53,7 +53,9 @@ add on one device shows up on the others.
   with a Notes column explaining where it came from. That block is the month's income: the app shows
   the total, the net against spending, and a card breaking it down line by line with your notes
 - **Journal** — dated entries, mood tracking, streaks, a 16-week mood heatmap
-- **Courses** — lessons completed, progress, deadlines, resources
+- **Courses** — lessons completed, progress, deadlines, resources, and a **to-do list per course**: add a task
+  with its deadline right on the course card and tick it off there. Course tasks are ordinary tasks, so they
+  also show in **Tasks** (tagged with the course) and get the same reminders
 - **Notes** — write freely and keep a to-do list in the same note: real tick boxes in the editor (Enter adds
   the next item, Backspace on an empty one removes it), tick or add items straight from the card, and a
   **To-do lists** filter. Categories are your own, each with a lamp icon — add, rename or delete them (trash beside each one on desktop,

@@ -258,6 +258,14 @@ button.item:active{opacity:.6}
 .note-progress{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--text-3)}
 .chip.remind{color:var(--blue-2);border-color:rgba(var(--acc2-rgb),.3)}
 .chip.remind.past{color:var(--text-3);border-color:var(--border)}
+.c-tasks{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.c-tasks-head{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:8px}
+.c-tasks-head .hint{margin-left:auto;font-weight:500}
+.c-tasks-list{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.ct-add{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ct-add .ct-title{flex:1 1 100%;min-width:0}
+.ct-add .ct-due{flex:1;min-width:0}
+.ct-add .input.sm{font-size:16px}
 .cl-head{display:flex;align-items:center;gap:7px;margin:14px 0 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
 .cl-count{font-weight:500;color:var(--text-3)}
 .cl-list{display:flex;flex-direction:column;gap:6px}
@@ -785,6 +793,38 @@ function noteRemindChip(n) {
   return `<span class="chip remind${past ? ' past' : ''}" title="${past ? 'Reminder sent' : 'Reminder on your phone'}">${icon('clock', 11)} ${past ? 'Reminded ' : ''}${esc(when)}</span>`;
 }
 
+/* Each course keeps its own to-do list. Its items are ordinary tasks that
+   carry the course's id, so they also show in Tasks, sort by deadline there,
+   and are covered by the same reminders as every other task. */
+const courseTasks = id => DB.tasks.filter(t => t.courseId === id)
+  .sort((a, b) => (a.status === 'Done') - (b.status === 'Done') || (a.due || '9999').localeCompare(b.due || '9999'));
+function addCourseTask(id, title, due) {
+  title = String(title || '').trim();
+  if (!title || !DB.courses.some(c => c.id === id)) return false;
+  DB.tasks.unshift({ id: uid(), created: today(), updated: today(), ts: Date.now(), title, priority: 'Medium', due: due || '',
+    status: 'To Do', projectId: '', courseId: id, notes: '', completed: '' });
+  saveDB();
+  render();
+  const again = document.querySelector(`.ct-title[data-id="${id}"]`);
+  if (again) again.focus();
+  toast('Task added to ' + courseName(id));
+  return true;
+}
+/** The to-do block inside a course card. */
+function courseTasksHTML(c, row) {
+  const list = courseTasks(c.id), open = list.filter(t => t.status !== 'Done');
+  const late = open.filter(t => t.due && t.due < today()).length;
+  return `<div class="c-tasks">
+    <div class="c-tasks-head">${icon('tasks', 14)} To-do${list.length ? `<span class="hint">${list.length - open.length}/${list.length} done${late ? ` · <span class="txt-red">${late} overdue</span>` : ''}</span>` : ''}</div>
+    ${list.length ? `<div class="c-tasks-list">${list.map(row).join('')}</div>` : ''}
+    <div class="ct-add">
+      <input class="input sm ct-title" data-act="noop" data-id="${c.id}" placeholder="Add a task…" aria-label="New task for ${esc(c.name)}" enterkeyhint="done">
+      <input class="input sm ct-due" type="date" data-act="noop" data-id="${c.id}" aria-label="Deadline">
+      <button class="btn btn-primary sm" data-act="courseTaskAdd" data-id="${c.id}" aria-label="Add task">${icon('plus', 14)}</button>
+    </div>
+  </div>`;
+}
+
 /* Categories are yours: rename them, remove them, add as many as you like. */
 function setNoteCats(list) {
   DB.settings.noteCatList = list;
@@ -1160,6 +1200,7 @@ const FORMS = {
     { k: 'status', l: 'Status', t: 'select', o: LISTS.taskStatus, def: 'To Do' },
     { k: 'due', l: 'Due date', t: 'date', def: () => today() },
     { k: 'projectId', l: 'Project', t: 'select', o: () => [{ v: '', l: '— No project —' }, ...DB.projects.map(p => ({ v: p.id, l: p.name }))] },
+    { k: 'courseId', l: 'Course', t: 'select', o: () => [{ v: '', l: '— No course —' }, ...DB.courses.map(c => ({ v: c.id, l: c.name }))] },
     { k: 'notes', l: 'Notes', t: 'textarea', full: true, rows: 3 }
   ], after: t => { t.completed = t.status === 'Done' ? (t.completed || today()) : ''; } },
 
@@ -1552,7 +1593,7 @@ function upcoming(days = 14) {
 const projName = id => (DB.projects.find(p => p.id === id) || {}).name || '';
 const EXPORTS = {
   Projects: { rows: () => DB.projects, cols: [['Project', 'name'], ['Status', 'status'], ['Priority', 'priority'], ['Area', 'area'], ['Start Date', 'start'], ['Deadline', 'deadline'], ['Progress %', r => num(r.progress) + '%'], ['Link', 'link'], ['Description', 'description']] },
-  Tasks: { rows: () => DB.tasks, cols: [['Task', 'title'], ['Project', r => projName(r.projectId)], ['Priority', 'priority'], ['Status', 'status'], ['Due Date', 'due'], ['Notes', 'notes']] },
+  Tasks: { rows: () => DB.tasks, cols: [['Task', 'title'], ['Project', r => projName(r.projectId)], ['Course', r => courseName(r.courseId)], ['Priority', 'priority'], ['Status', 'status'], ['Due Date', 'due'], ['Notes', 'notes']] },
   Transactions: { rows: () => [...(typeof usingSheets === 'function' && usingSheets() ? expenseUniverse() : DB.transactions)].sort((a, b) => String(a.date).localeCompare(String(b.date))), cols: [['Date', 'date'], ['Type', 'type'], ['Category', 'category'], ['Description', 'description'], ['Amount', 'amount'], ['Account', 'account']] },
   Budget: { rows: () => DB.budgets, cols: [['Category', 'category'], ['Monthly Budget', 'limit']] },
   Goals: { rows: () => DB.goals, cols: [['Goal', 'name'], ['Target Amount', 'target'], ['Saved So Far', 'saved'], ['Target Date', 'deadline']] },
@@ -3238,14 +3279,14 @@ function miniChart(endMonth, n = 6) {
 }
 const chartLegend = () => `<div class="legend"><span><i style="background:linear-gradient(#00B4FF,#0066FF)"></i>In</span><span><i style="background:#4A5670"></i>Out</span></div>`;
 
-function taskItem(x) {
+function taskItem(x, inCourse = false) {
   const done = x.status === 'Done', n = daysUntil(x.due);
   const p = DB.projects.find(p => p.id === x.projectId);
   const dueCls = done || n === null ? '' : n < 0 ? 'txt-red' : n === 0 ? 'txt-amber' : '';
   return `<div class="item${done ? ' done' : ''}" data-act="edit" data-type="tasks" data-id="${x.id}">
     <button class="check${done ? ' on' : ''}" data-act="toggleTask" data-id="${x.id}" aria-label="Toggle complete">${icon('check', 15, 3)}</button>
     <div class="grow"><div class="t">${esc(x.title)}</div>
-      <div class="s"><span class="dot" style="background:var(--${{ High: 'red', Medium: 'amber', Low: 'slate' }[x.priority]})"></span>${x.priority}${x.due ? ` · <span class="${dueCls}">${done ? fmtDate(x.due) : relDay(x.due)}</span>` : ''}${p ? ` · ${esc(p.name)}` : ''}</div></div>
+      <div class="s"><span class="dot" style="background:var(--${{ High: 'red', Medium: 'amber', Low: 'slate' }[x.priority]})"></span>${x.priority}${x.due ? ` · <span class="${dueCls}">${done ? fmtDate(x.due) : relDay(x.due)}</span>` : ''}${p ? ` · ${esc(p.name)}` : ''}${!inCourse && x.courseId && courseName(x.courseId) ? ` · ${esc(courseName(x.courseId))}` : ''}</div></div>
     ${x.status === 'In Progress' ? '<span class="chip blue">Now</span>' : ''}
   </div>`;
 }
@@ -3644,6 +3685,7 @@ SCREENS.courses = () => {
         <div class="hint" style="margin-top:11px">${c.deadline ? (done ? 'Finished ' + fmtDate(c.deadline) : `<span class="${n < 0 ? 'txt-red' : ''}">${relDay(c.deadline)}</span>`) : 'No deadline'}</div>
       </div>
       ${!done ? `<button class="btn btn-ghost sm" style="width:100%;margin-top:12px" data-act="lessonPlus" data-id="${c.id}">${icon('check', 15)} Log a lesson</button>` : ''}
+      ${courseTasksHTML(c, x => taskItem(x, true))}
     </div>`;
   }).join('') : `<div class="card">${emptyState('cap', 'No courses', 'Track what you are learning.', addBtn('courses', 'Add course'))}</div>`);
 };
@@ -4131,6 +4173,7 @@ const ACTIONS = {
   addNoteCat: () => addNoteCat(),
   newChecklist: () => openForm('notes', null, { content: '- [ ] ', category: UI.noteCat && !['All', 'Pinned', 'Lists'].includes(UI.noteCat) ? UI.noteCat : noteCats()[0] }),
   manageNoteCats: () => manageNoteCats(),
+  courseTaskAdd: el => { const card = el.closest('.c-tasks'); addCourseTask(el.dataset.id, $('.ct-title', card).value, $('.ct-due', card).value); },
   delNoteCat: (el, e) => { if (e) e.stopPropagation(); confirmDeleteNoteCat(el.dataset.val); },
   pinNote: el => { const n = find('notes', el.dataset.id); if (!n) return; n.pinned = !n.pinned; n.ts = Date.now(); saveDB(); render(); toast(n.pinned ? 'Pinned' : 'Unpinned'); },
   lessonPlus: el => {
@@ -4291,6 +4334,7 @@ function openHit(r) {
   $('#view').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.id === 'captureInput') { e.preventDefault(); ACTIONS.capture(); }
     if (e.key === 'Enter' && e.target.classList.contains('cl-quick')) { e.preventDefault(); addNoteItem(e.target.dataset.id, e.target.value); }
+    if (e.key === 'Enter' && e.target.classList.contains('ct-title')) { e.preventDefault(); const card = e.target.closest('.c-tasks'); addCourseTask(e.target.dataset.id, e.target.value, $('.ct-due', card).value); }
   });
   $('#view').addEventListener('change', e => { if (e.target.id === 'impJson') importBackup(e.target.files[0]); });
 
